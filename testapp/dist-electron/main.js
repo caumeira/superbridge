@@ -1,0 +1,1363 @@
+'use strict';
+
+const electron = require('electron');
+const path = require('path');
+
+function createLogger(name) {
+  const LOG_COLOR = "#808080";
+  const LOG_STYLE = `color: ${LOG_COLOR};`;
+  const LABEL = `%c🌉 ${name}:%c`;
+  const log2 = (...args) => {
+    console.info(LABEL, LOG_STYLE, "", ...args);
+  };
+  log2.debug = (...args) => {
+    console.debug(LABEL, LOG_STYLE, "", ...args);
+  };
+  log2.warn = (...args) => {
+    console.warn(LABEL, LOG_STYLE, "", ...args);
+  };
+  log2.error = (...args) => {
+    console.error(LABEL, LOG_STYLE, "", ...args);
+  };
+  log2.rename = (name2) => {
+    return createLogger(name2);
+  };
+  return log2;
+}
+createLogger("superbridge");
+
+const log$5 = createLogger("superbridge/messagesHandler");
+let messagesHandler = null;
+function setMessagesHandler(handler) {
+  log$5.debug("Set messages handler", handler);
+  messagesHandler = handler;
+}
+function getMessagesHandler() {
+  if (!messagesHandler) {
+    throw new Error("Messages handler not set");
+  }
+  return messagesHandler;
+}
+
+const log$4 = createLogger("superbridge/messages");
+const registeredMessageTypes = /* @__PURE__ */ new Set();
+function defineBridgeMessage(name) {
+  if (registeredMessageTypes.has(name)) {
+    log$4.warn(`Message "${name}" is already registered`);
+  }
+  registeredMessageTypes.add(name);
+  return {
+    name,
+    async send(payload, webId) {
+      log$4.debug(`Sending "${name}" with payload`, payload);
+      const messagesHandler = getMessagesHandler();
+      return messagesHandler.send(name, payload, webId);
+    },
+    handle(handler) {
+      const messagesHandler = getMessagesHandler();
+      return messagesHandler.handle(name, (payload, event) => {
+        log$4.debug(`Handling "${name}" with payload`, payload);
+        return handler(payload, event);
+      });
+    }
+  };
+}
+
+const $getBodyId = defineBridgeMessage("$getBodyId");
+
+const $execute = defineBridgeMessage(
+  "$execute"
+);
+const $reset = defineBridgeMessage("$reset");
+
+function createControlledPromise() {
+  let controller;
+  const promise = new Promise((_resolve, _reject) => {
+    controller = {
+      resolve: _resolve,
+      reject: _reject
+    };
+  });
+  return [promise, controller];
+}
+
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+function generateId(length = 12) {
+  let id = "";
+  for (let i = 0; i < length; i++) {
+    id += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
+  }
+  return id;
+}
+
+function once(fn) {
+  let called = false;
+  let result;
+  return function(...args) {
+    if (called) return result;
+    called = true;
+    result = fn(...args);
+    return result;
+  };
+}
+
+const signalRemoteController = /* @__PURE__ */ new Map();
+const $abortRemoteSignal = defineBridgeMessage("$abortRemoteSignal");
+function registerSignal(localSignal) {
+  initializeRemoteSignals();
+  const id = `$$signal-${generateId()}`;
+  const remoteController = new AbortController();
+  signalRemoteController.set(id, remoteController);
+  localSignal.addEventListener("abort", () => {
+    $abortRemoteSignal.send({ signalId: id });
+    signalRemoteController.delete(id);
+  });
+  signalFinalizationRegistry.register(localSignal, id);
+  return id;
+}
+const initializeRemoteSignals = once(function initializeRemoteSignals2() {
+  $abortRemoteSignal.handle(async ({ signalId }) => {
+    const controller = signalRemoteController.get(signalId);
+    if (!controller) return;
+    controller.abort();
+    signalRemoteController.delete(signalId);
+  });
+});
+const signalFinalizationRegistry = new FinalizationRegistry(
+  (remoteSignalId) => {
+    const controller = signalRemoteController.get(remoteSignalId);
+    if (!controller) return;
+    controller.abort();
+    signalRemoteController.delete(remoteSignalId);
+  }
+);
+function deserializeSignalId(signalId) {
+  initializeRemoteSignals();
+  const controller = new AbortController();
+  signalRemoteController.set(signalId, controller);
+  return controller.signal;
+}
+const abortSignalSerializer = {
+  isApplicable: (value) => value instanceof AbortSignal,
+  serialize: (signal) => registerSignal(signal),
+  deserialize: (signalId) => deserializeSignalId(signalId)
+};
+
+const log$3 = createLogger("superbridge/callbacks");
+const callbacks = /* @__PURE__ */ new Map();
+setInterval(() => {
+  console.log("callbacks", callbacks.size);
+}, 1e3);
+const $removeRemoteCallback = defineBridgeMessage("$removeRemoteCallback");
+const $triggerRemoteCallback = defineBridgeMessage("$triggerRemoteCallback");
+function getCallbackId(callback) {
+  let id = `$$callback-${generateId()}`;
+  if (typeof window !== "undefined") {
+    id = `${id}-${window.$superbridge.routingId}`;
+  }
+  return id;
+}
+function getCallbackRoutingId(callbackId) {
+  const [_callbackLabel, _callbackId, routingId] = callbackId.split("-");
+  if (!routingId) return null;
+  return parseInt(routingId, 10);
+}
+function registerCallback(callback) {
+  initializeRemoteCallbacks();
+  const id = getCallbackId();
+  callbacks.set(id, callback);
+  return id;
+}
+const initializeRemoteCallbacks = once(() => {
+  $removeRemoteCallback.handle(async ({ callbackId }) => {
+    log$3.debug(`Handling remove remote callback "${callbackId}"`);
+    callbacks.delete(callbackId);
+  });
+  $triggerRemoteCallback.handle(async ({ callbackId, args }) => {
+    log$3.debug(
+      `Handling trigger remote callback "${callbackId}" with callId`,
+      args
+    );
+    const callback = callbacks.get(callbackId);
+    if (!callback) {
+      throw new Error(`Callback "${callbackId}" not found`);
+    }
+    return await callback(...args);
+  });
+});
+const callbackFinalizationRegistry = new FinalizationRegistry(
+  (remoteCallbackId) => {
+    $removeRemoteCallback.send(
+      { callbackId: remoteCallbackId },
+      getCallbackRoutingId(remoteCallbackId) ?? void 0
+    );
+  }
+);
+function deserializeCallbackId(callbackId) {
+  async function remoteCallbackInvoker(...args) {
+    log$3.debug(`Invoking remote callback "${callbackId}" with args`, args);
+    return await $triggerRemoteCallback.send(
+      {
+        callbackId,
+        args
+      },
+      getCallbackRoutingId(callbackId) ?? void 0
+    );
+  }
+  callbackFinalizationRegistry.register(remoteCallbackInvoker, callbackId);
+  return remoteCallbackInvoker;
+}
+const callbackSerializer = {
+  isApplicable: (value) => typeof value === "function",
+  serialize: (callback) => registerCallback(callback),
+  deserialize: deserializeCallbackId
+};
+
+class DoubleIndexedKV {
+    constructor() {
+        this.keyToValue = new Map();
+        this.valueToKey = new Map();
+    }
+    set(key, value) {
+        this.keyToValue.set(key, value);
+        this.valueToKey.set(value, key);
+    }
+    getByKey(key) {
+        return this.keyToValue.get(key);
+    }
+    getByValue(value) {
+        return this.valueToKey.get(value);
+    }
+    clear() {
+        this.keyToValue.clear();
+        this.valueToKey.clear();
+    }
+}
+
+class Registry {
+    constructor(generateIdentifier) {
+        this.generateIdentifier = generateIdentifier;
+        this.kv = new DoubleIndexedKV();
+    }
+    register(value, identifier) {
+        if (this.kv.getByValue(value)) {
+            return;
+        }
+        if (!identifier) {
+            identifier = this.generateIdentifier(value);
+        }
+        this.kv.set(identifier, value);
+    }
+    clear() {
+        this.kv.clear();
+    }
+    getIdentifier(value) {
+        return this.kv.getByValue(value);
+    }
+    getValue(identifier) {
+        return this.kv.getByKey(identifier);
+    }
+}
+
+class ClassRegistry extends Registry {
+    constructor() {
+        super(c => c.name);
+        this.classToAllowedProps = new Map();
+    }
+    register(value, options) {
+        if (typeof options === 'object') {
+            if (options.allowProps) {
+                this.classToAllowedProps.set(value, options.allowProps);
+            }
+            super.register(value, options.identifier);
+        }
+        else {
+            super.register(value, options);
+        }
+    }
+    getAllowedProps(value) {
+        return this.classToAllowedProps.get(value);
+    }
+}
+
+function valuesOfObj(record) {
+    if ('values' in Object) {
+        // eslint-disable-next-line es5/no-es6-methods
+        return Object.values(record);
+    }
+    const values = [];
+    // eslint-disable-next-line no-restricted-syntax
+    for (const key in record) {
+        if (record.hasOwnProperty(key)) {
+            values.push(record[key]);
+        }
+    }
+    return values;
+}
+function find(record, predicate) {
+    const values = valuesOfObj(record);
+    if ('find' in values) {
+        // eslint-disable-next-line es5/no-es6-methods
+        return values.find(predicate);
+    }
+    const valuesNotNever = values;
+    for (let i = 0; i < valuesNotNever.length; i++) {
+        const value = valuesNotNever[i];
+        if (predicate(value)) {
+            return value;
+        }
+    }
+    return undefined;
+}
+function forEach(record, run) {
+    Object.entries(record).forEach(([key, value]) => run(value, key));
+}
+function includes(arr, value) {
+    return arr.indexOf(value) !== -1;
+}
+function findArr(record, predicate) {
+    for (let i = 0; i < record.length; i++) {
+        const value = record[i];
+        if (predicate(value)) {
+            return value;
+        }
+    }
+    return undefined;
+}
+
+class CustomTransformerRegistry {
+    constructor() {
+        this.transfomers = {};
+    }
+    register(transformer) {
+        this.transfomers[transformer.name] = transformer;
+    }
+    findApplicable(v) {
+        return find(this.transfomers, transformer => transformer.isApplicable(v));
+    }
+    findByName(name) {
+        return this.transfomers[name];
+    }
+}
+
+const getType$1 = (payload) => Object.prototype.toString.call(payload).slice(8, -1);
+const isUndefined = (payload) => typeof payload === 'undefined';
+const isNull = (payload) => payload === null;
+const isPlainObject$1 = (payload) => {
+    if (typeof payload !== 'object' || payload === null)
+        return false;
+    if (payload === Object.prototype)
+        return false;
+    if (Object.getPrototypeOf(payload) === null)
+        return true;
+    return Object.getPrototypeOf(payload) === Object.prototype;
+};
+const isEmptyObject = (payload) => isPlainObject$1(payload) && Object.keys(payload).length === 0;
+const isArray$1 = (payload) => Array.isArray(payload);
+const isString = (payload) => typeof payload === 'string';
+const isNumber = (payload) => typeof payload === 'number' && !isNaN(payload);
+const isBoolean = (payload) => typeof payload === 'boolean';
+const isRegExp = (payload) => payload instanceof RegExp;
+const isMap = (payload) => payload instanceof Map;
+const isSet = (payload) => payload instanceof Set;
+const isSymbol = (payload) => getType$1(payload) === 'Symbol';
+const isDate = (payload) => payload instanceof Date && !isNaN(payload.valueOf());
+const isError = (payload) => payload instanceof Error;
+const isNaNValue = (payload) => typeof payload === 'number' && isNaN(payload);
+const isPrimitive = (payload) => isBoolean(payload) ||
+    isNull(payload) ||
+    isUndefined(payload) ||
+    isNumber(payload) ||
+    isString(payload) ||
+    isSymbol(payload);
+const isBigint = (payload) => typeof payload === 'bigint';
+const isInfinite = (payload) => payload === Infinity || payload === -Infinity;
+const isTypedArray = (payload) => ArrayBuffer.isView(payload) && !(payload instanceof DataView);
+const isURL = (payload) => payload instanceof URL;
+
+const escapeKey = (key) => key.replace(/\./g, '\\.');
+const stringifyPath = (path) => path
+    .map(String)
+    .map(escapeKey)
+    .join('.');
+const parsePath = (string) => {
+    const result = [];
+    let segment = '';
+    for (let i = 0; i < string.length; i++) {
+        let char = string.charAt(i);
+        const isEscapedDot = char === '\\' && string.charAt(i + 1) === '.';
+        if (isEscapedDot) {
+            segment += '.';
+            i++;
+            continue;
+        }
+        const isEndOfSegment = char === '.';
+        if (isEndOfSegment) {
+            result.push(segment);
+            segment = '';
+            continue;
+        }
+        segment += char;
+    }
+    const lastSegment = segment;
+    result.push(lastSegment);
+    return result;
+};
+
+function simpleTransformation(isApplicable, annotation, transform, untransform) {
+    return {
+        isApplicable,
+        annotation,
+        transform,
+        untransform,
+    };
+}
+const simpleRules = [
+    simpleTransformation(isUndefined, 'undefined', () => null, () => undefined),
+    simpleTransformation(isBigint, 'bigint', v => v.toString(), v => {
+        if (typeof BigInt !== 'undefined') {
+            return BigInt(v);
+        }
+        console.error('Please add a BigInt polyfill.');
+        return v;
+    }),
+    simpleTransformation(isDate, 'Date', v => v.toISOString(), v => new Date(v)),
+    simpleTransformation(isError, 'Error', (v, superJson) => {
+        const baseError = {
+            name: v.name,
+            message: v.message,
+        };
+        superJson.allowedErrorProps.forEach(prop => {
+            baseError[prop] = v[prop];
+        });
+        return baseError;
+    }, (v, superJson) => {
+        const e = new Error(v.message);
+        e.name = v.name;
+        e.stack = v.stack;
+        superJson.allowedErrorProps.forEach(prop => {
+            e[prop] = v[prop];
+        });
+        return e;
+    }),
+    simpleTransformation(isRegExp, 'regexp', v => '' + v, regex => {
+        const body = regex.slice(1, regex.lastIndexOf('/'));
+        const flags = regex.slice(regex.lastIndexOf('/') + 1);
+        return new RegExp(body, flags);
+    }),
+    simpleTransformation(isSet, 'set', 
+    // (sets only exist in es6+)
+    // eslint-disable-next-line es5/no-es6-methods
+    v => [...v.values()], v => new Set(v)),
+    simpleTransformation(isMap, 'map', v => [...v.entries()], v => new Map(v)),
+    simpleTransformation((v) => isNaNValue(v) || isInfinite(v), 'number', v => {
+        if (isNaNValue(v)) {
+            return 'NaN';
+        }
+        if (v > 0) {
+            return 'Infinity';
+        }
+        else {
+            return '-Infinity';
+        }
+    }, Number),
+    simpleTransformation((v) => v === 0 && 1 / v === -Infinity, 'number', () => {
+        return '-0';
+    }, Number),
+    simpleTransformation(isURL, 'URL', v => v.toString(), v => new URL(v)),
+];
+function compositeTransformation(isApplicable, annotation, transform, untransform) {
+    return {
+        isApplicable,
+        annotation,
+        transform,
+        untransform,
+    };
+}
+const symbolRule = compositeTransformation((s, superJson) => {
+    if (isSymbol(s)) {
+        const isRegistered = !!superJson.symbolRegistry.getIdentifier(s);
+        return isRegistered;
+    }
+    return false;
+}, (s, superJson) => {
+    const identifier = superJson.symbolRegistry.getIdentifier(s);
+    return ['symbol', identifier];
+}, v => v.description, (_, a, superJson) => {
+    const value = superJson.symbolRegistry.getValue(a[1]);
+    if (!value) {
+        throw new Error('Trying to deserialize unknown symbol');
+    }
+    return value;
+});
+const constructorToName = [
+    Int8Array,
+    Uint8Array,
+    Int16Array,
+    Uint16Array,
+    Int32Array,
+    Uint32Array,
+    Float32Array,
+    Float64Array,
+    Uint8ClampedArray,
+].reduce((obj, ctor) => {
+    obj[ctor.name] = ctor;
+    return obj;
+}, {});
+const typedArrayRule = compositeTransformation(isTypedArray, v => ['typed-array', v.constructor.name], v => [...v], (v, a) => {
+    const ctor = constructorToName[a[1]];
+    if (!ctor) {
+        throw new Error('Trying to deserialize unknown typed array');
+    }
+    return new ctor(v);
+});
+function isInstanceOfRegisteredClass(potentialClass, superJson) {
+    if (potentialClass?.constructor) {
+        const isRegistered = !!superJson.classRegistry.getIdentifier(potentialClass.constructor);
+        return isRegistered;
+    }
+    return false;
+}
+const classRule = compositeTransformation(isInstanceOfRegisteredClass, (clazz, superJson) => {
+    const identifier = superJson.classRegistry.getIdentifier(clazz.constructor);
+    return ['class', identifier];
+}, (clazz, superJson) => {
+    const allowedProps = superJson.classRegistry.getAllowedProps(clazz.constructor);
+    if (!allowedProps) {
+        return { ...clazz };
+    }
+    const result = {};
+    allowedProps.forEach(prop => {
+        result[prop] = clazz[prop];
+    });
+    return result;
+}, (v, a, superJson) => {
+    const clazz = superJson.classRegistry.getValue(a[1]);
+    if (!clazz) {
+        throw new Error(`Trying to deserialize unknown class '${a[1]}' - check https://github.com/blitz-js/superjson/issues/116#issuecomment-773996564`);
+    }
+    return Object.assign(Object.create(clazz.prototype), v);
+});
+const customRule = compositeTransformation((value, superJson) => {
+    return !!superJson.customTransformerRegistry.findApplicable(value);
+}, (value, superJson) => {
+    const transformer = superJson.customTransformerRegistry.findApplicable(value);
+    return ['custom', transformer.name];
+}, (value, superJson) => {
+    const transformer = superJson.customTransformerRegistry.findApplicable(value);
+    return transformer.serialize(value);
+}, (v, a, superJson) => {
+    const transformer = superJson.customTransformerRegistry.findByName(a[1]);
+    if (!transformer) {
+        throw new Error('Trying to deserialize unknown custom value');
+    }
+    return transformer.deserialize(v);
+});
+const compositeRules = [classRule, symbolRule, customRule, typedArrayRule];
+const transformValue = (value, superJson) => {
+    const applicableCompositeRule = findArr(compositeRules, rule => rule.isApplicable(value, superJson));
+    if (applicableCompositeRule) {
+        return {
+            value: applicableCompositeRule.transform(value, superJson),
+            type: applicableCompositeRule.annotation(value, superJson),
+        };
+    }
+    const applicableSimpleRule = findArr(simpleRules, rule => rule.isApplicable(value, superJson));
+    if (applicableSimpleRule) {
+        return {
+            value: applicableSimpleRule.transform(value, superJson),
+            type: applicableSimpleRule.annotation,
+        };
+    }
+    return undefined;
+};
+const simpleRulesByAnnotation = {};
+simpleRules.forEach(rule => {
+    simpleRulesByAnnotation[rule.annotation] = rule;
+});
+const untransformValue = (json, type, superJson) => {
+    if (isArray$1(type)) {
+        switch (type[0]) {
+            case 'symbol':
+                return symbolRule.untransform(json, type, superJson);
+            case 'class':
+                return classRule.untransform(json, type, superJson);
+            case 'custom':
+                return customRule.untransform(json, type, superJson);
+            case 'typed-array':
+                return typedArrayRule.untransform(json, type, superJson);
+            default:
+                throw new Error('Unknown transformation: ' + type);
+        }
+    }
+    else {
+        const transformation = simpleRulesByAnnotation[type];
+        if (!transformation) {
+            throw new Error('Unknown transformation: ' + type);
+        }
+        return transformation.untransform(json, superJson);
+    }
+};
+
+const getNthKey = (value, n) => {
+    if (n > value.size)
+        throw new Error('index out of bounds');
+    const keys = value.keys();
+    while (n > 0) {
+        keys.next();
+        n--;
+    }
+    return keys.next().value;
+};
+function validatePath(path) {
+    if (includes(path, '__proto__')) {
+        throw new Error('__proto__ is not allowed as a property');
+    }
+    if (includes(path, 'prototype')) {
+        throw new Error('prototype is not allowed as a property');
+    }
+    if (includes(path, 'constructor')) {
+        throw new Error('constructor is not allowed as a property');
+    }
+}
+const getDeep = (object, path) => {
+    validatePath(path);
+    for (let i = 0; i < path.length; i++) {
+        const key = path[i];
+        if (isSet(object)) {
+            object = getNthKey(object, +key);
+        }
+        else if (isMap(object)) {
+            const row = +key;
+            const type = +path[++i] === 0 ? 'key' : 'value';
+            const keyOfRow = getNthKey(object, row);
+            switch (type) {
+                case 'key':
+                    object = keyOfRow;
+                    break;
+                case 'value':
+                    object = object.get(keyOfRow);
+                    break;
+            }
+        }
+        else {
+            object = object[key];
+        }
+    }
+    return object;
+};
+const setDeep = (object, path, mapper) => {
+    validatePath(path);
+    if (path.length === 0) {
+        return mapper(object);
+    }
+    let parent = object;
+    for (let i = 0; i < path.length - 1; i++) {
+        const key = path[i];
+        if (isArray$1(parent)) {
+            const index = +key;
+            parent = parent[index];
+        }
+        else if (isPlainObject$1(parent)) {
+            parent = parent[key];
+        }
+        else if (isSet(parent)) {
+            const row = +key;
+            parent = getNthKey(parent, row);
+        }
+        else if (isMap(parent)) {
+            const isEnd = i === path.length - 2;
+            if (isEnd) {
+                break;
+            }
+            const row = +key;
+            const type = +path[++i] === 0 ? 'key' : 'value';
+            const keyOfRow = getNthKey(parent, row);
+            switch (type) {
+                case 'key':
+                    parent = keyOfRow;
+                    break;
+                case 'value':
+                    parent = parent.get(keyOfRow);
+                    break;
+            }
+        }
+    }
+    const lastKey = path[path.length - 1];
+    if (isArray$1(parent)) {
+        parent[+lastKey] = mapper(parent[+lastKey]);
+    }
+    else if (isPlainObject$1(parent)) {
+        parent[lastKey] = mapper(parent[lastKey]);
+    }
+    if (isSet(parent)) {
+        const oldValue = getNthKey(parent, +lastKey);
+        const newValue = mapper(oldValue);
+        if (oldValue !== newValue) {
+            parent.delete(oldValue);
+            parent.add(newValue);
+        }
+    }
+    if (isMap(parent)) {
+        const row = +path[path.length - 2];
+        const keyToRow = getNthKey(parent, row);
+        const type = +lastKey === 0 ? 'key' : 'value';
+        switch (type) {
+            case 'key': {
+                const newKey = mapper(keyToRow);
+                parent.set(newKey, parent.get(keyToRow));
+                if (newKey !== keyToRow) {
+                    parent.delete(keyToRow);
+                }
+                break;
+            }
+            case 'value': {
+                parent.set(keyToRow, mapper(parent.get(keyToRow)));
+                break;
+            }
+        }
+    }
+    return object;
+};
+
+function traverse(tree, walker, origin = []) {
+    if (!tree) {
+        return;
+    }
+    if (!isArray$1(tree)) {
+        forEach(tree, (subtree, key) => traverse(subtree, walker, [...origin, ...parsePath(key)]));
+        return;
+    }
+    const [nodeValue, children] = tree;
+    if (children) {
+        forEach(children, (child, key) => {
+            traverse(child, walker, [...origin, ...parsePath(key)]);
+        });
+    }
+    walker(nodeValue, origin);
+}
+function applyValueAnnotations(plain, annotations, superJson) {
+    traverse(annotations, (type, path) => {
+        plain = setDeep(plain, path, v => untransformValue(v, type, superJson));
+    });
+    return plain;
+}
+function applyReferentialEqualityAnnotations(plain, annotations) {
+    function apply(identicalPaths, path) {
+        const object = getDeep(plain, parsePath(path));
+        identicalPaths.map(parsePath).forEach(identicalObjectPath => {
+            plain = setDeep(plain, identicalObjectPath, () => object);
+        });
+    }
+    if (isArray$1(annotations)) {
+        const [root, other] = annotations;
+        root.forEach(identicalPath => {
+            plain = setDeep(plain, parsePath(identicalPath), () => plain);
+        });
+        if (other) {
+            forEach(other, apply);
+        }
+    }
+    else {
+        forEach(annotations, apply);
+    }
+    return plain;
+}
+const isDeep = (object, superJson) => isPlainObject$1(object) ||
+    isArray$1(object) ||
+    isMap(object) ||
+    isSet(object) ||
+    isInstanceOfRegisteredClass(object, superJson);
+function addIdentity(object, path, identities) {
+    const existingSet = identities.get(object);
+    if (existingSet) {
+        existingSet.push(path);
+    }
+    else {
+        identities.set(object, [path]);
+    }
+}
+function generateReferentialEqualityAnnotations(identitites, dedupe) {
+    const result = {};
+    let rootEqualityPaths = undefined;
+    identitites.forEach(paths => {
+        if (paths.length <= 1) {
+            return;
+        }
+        // if we're not deduping, all of these objects continue existing.
+        // putting the shortest path first makes it easier to parse for humans
+        // if we're deduping though, only the first entry will still exist, so we can't do this optimisation.
+        if (!dedupe) {
+            paths = paths
+                .map(path => path.map(String))
+                .sort((a, b) => a.length - b.length);
+        }
+        const [representativePath, ...identicalPaths] = paths;
+        if (representativePath.length === 0) {
+            rootEqualityPaths = identicalPaths.map(stringifyPath);
+        }
+        else {
+            result[stringifyPath(representativePath)] = identicalPaths.map(stringifyPath);
+        }
+    });
+    if (rootEqualityPaths) {
+        if (isEmptyObject(result)) {
+            return [rootEqualityPaths];
+        }
+        else {
+            return [rootEqualityPaths, result];
+        }
+    }
+    else {
+        return isEmptyObject(result) ? undefined : result;
+    }
+}
+const walker = (object, identities, superJson, dedupe, path = [], objectsInThisPath = [], seenObjects = new Map()) => {
+    const primitive = isPrimitive(object);
+    if (!primitive) {
+        addIdentity(object, path, identities);
+        const seen = seenObjects.get(object);
+        if (seen) {
+            // short-circuit result if we've seen this object before
+            return dedupe
+                ? {
+                    transformedValue: null,
+                }
+                : seen;
+        }
+    }
+    if (!isDeep(object, superJson)) {
+        const transformed = transformValue(object, superJson);
+        const result = transformed
+            ? {
+                transformedValue: transformed.value,
+                annotations: [transformed.type],
+            }
+            : {
+                transformedValue: object,
+            };
+        if (!primitive) {
+            seenObjects.set(object, result);
+        }
+        return result;
+    }
+    if (includes(objectsInThisPath, object)) {
+        // prevent circular references
+        return {
+            transformedValue: null,
+        };
+    }
+    const transformationResult = transformValue(object, superJson);
+    const transformed = transformationResult?.value ?? object;
+    const transformedValue = isArray$1(transformed) ? [] : {};
+    const innerAnnotations = {};
+    forEach(transformed, (value, index) => {
+        if (index === '__proto__' ||
+            index === 'constructor' ||
+            index === 'prototype') {
+            throw new Error(`Detected property ${index}. This is a prototype pollution risk, please remove it from your object.`);
+        }
+        const recursiveResult = walker(value, identities, superJson, dedupe, [...path, index], [...objectsInThisPath, object], seenObjects);
+        transformedValue[index] = recursiveResult.transformedValue;
+        if (isArray$1(recursiveResult.annotations)) {
+            innerAnnotations[index] = recursiveResult.annotations;
+        }
+        else if (isPlainObject$1(recursiveResult.annotations)) {
+            forEach(recursiveResult.annotations, (tree, key) => {
+                innerAnnotations[escapeKey(index) + '.' + key] = tree;
+            });
+        }
+    });
+    const result = isEmptyObject(innerAnnotations)
+        ? {
+            transformedValue,
+            annotations: !!transformationResult
+                ? [transformationResult.type]
+                : undefined,
+        }
+        : {
+            transformedValue,
+            annotations: !!transformationResult
+                ? [transformationResult.type, innerAnnotations]
+                : innerAnnotations,
+        };
+    if (!primitive) {
+        seenObjects.set(object, result);
+    }
+    return result;
+};
+
+function getType(payload) {
+  return Object.prototype.toString.call(payload).slice(8, -1);
+}
+
+function isArray(payload) {
+  return getType(payload) === "Array";
+}
+
+function isPlainObject(payload) {
+  if (getType(payload) !== "Object")
+    return false;
+  const prototype = Object.getPrototypeOf(payload);
+  return !!prototype && prototype.constructor === Object && prototype === Object.prototype;
+}
+
+function assignProp(carry, key, newVal, originalObject, includeNonenumerable) {
+  const propType = {}.propertyIsEnumerable.call(originalObject, key) ? "enumerable" : "nonenumerable";
+  if (propType === "enumerable")
+    carry[key] = newVal;
+  if (includeNonenumerable && propType === "nonenumerable") {
+    Object.defineProperty(carry, key, {
+      value: newVal,
+      enumerable: false,
+      writable: true,
+      configurable: true
+    });
+  }
+}
+function copy(target, options = {}) {
+  if (isArray(target)) {
+    return target.map((item) => copy(item, options));
+  }
+  if (!isPlainObject(target)) {
+    return target;
+  }
+  const props = Object.getOwnPropertyNames(target);
+  const symbols = Object.getOwnPropertySymbols(target);
+  return [...props, ...symbols].reduce((carry, key) => {
+    if (isArray(options.props) && !options.props.includes(key)) {
+      return carry;
+    }
+    const val = target[key];
+    const newVal = copy(val, options);
+    assignProp(carry, key, newVal, target, options.nonenumerable);
+    return carry;
+  }, {});
+}
+
+class SuperJSON {
+    /**
+     * @param dedupeReferentialEqualities  If true, SuperJSON will make sure only one instance of referentially equal objects are serialized and the rest are replaced with `null`.
+     */
+    constructor({ dedupe = false, } = {}) {
+        this.classRegistry = new ClassRegistry();
+        this.symbolRegistry = new Registry(s => s.description ?? '');
+        this.customTransformerRegistry = new CustomTransformerRegistry();
+        this.allowedErrorProps = [];
+        this.dedupe = dedupe;
+    }
+    serialize(object) {
+        const identities = new Map();
+        const output = walker(object, identities, this, this.dedupe);
+        const res = {
+            json: output.transformedValue,
+        };
+        if (output.annotations) {
+            res.meta = {
+                ...res.meta,
+                values: output.annotations,
+            };
+        }
+        const equalityAnnotations = generateReferentialEqualityAnnotations(identities, this.dedupe);
+        if (equalityAnnotations) {
+            res.meta = {
+                ...res.meta,
+                referentialEqualities: equalityAnnotations,
+            };
+        }
+        return res;
+    }
+    deserialize(payload) {
+        const { json, meta } = payload;
+        let result = copy(json);
+        if (meta?.values) {
+            result = applyValueAnnotations(result, meta.values, this);
+        }
+        if (meta?.referentialEqualities) {
+            result = applyReferentialEqualityAnnotations(result, meta.referentialEqualities);
+        }
+        return result;
+    }
+    stringify(object) {
+        return JSON.stringify(this.serialize(object));
+    }
+    parse(string) {
+        return this.deserialize(JSON.parse(string));
+    }
+    registerClass(v, options) {
+        this.classRegistry.register(v, options);
+    }
+    registerSymbol(v, identifier) {
+        this.symbolRegistry.register(v, identifier);
+    }
+    registerCustom(transformer, name) {
+        this.customTransformerRegistry.register({
+            name,
+            ...transformer,
+        });
+    }
+    allowErrorProps(...props) {
+        this.allowedErrorProps.push(...props);
+    }
+}
+SuperJSON.defaultInstance = new SuperJSON();
+SuperJSON.serialize = SuperJSON.defaultInstance.serialize.bind(SuperJSON.defaultInstance);
+SuperJSON.deserialize = SuperJSON.defaultInstance.deserialize.bind(SuperJSON.defaultInstance);
+SuperJSON.stringify = SuperJSON.defaultInstance.stringify.bind(SuperJSON.defaultInstance);
+SuperJSON.parse = SuperJSON.defaultInstance.parse.bind(SuperJSON.defaultInstance);
+SuperJSON.registerClass = SuperJSON.defaultInstance.registerClass.bind(SuperJSON.defaultInstance);
+SuperJSON.registerSymbol = SuperJSON.defaultInstance.registerSymbol.bind(SuperJSON.defaultInstance);
+SuperJSON.registerCustom = SuperJSON.defaultInstance.registerCustom.bind(SuperJSON.defaultInstance);
+SuperJSON.allowErrorProps = SuperJSON.defaultInstance.allowErrorProps.bind(SuperJSON.defaultInstance);
+
+const log$2 = createLogger("superbridge/serializer");
+const bridgeSerializer = new SuperJSON();
+const initializeRemoteSerializer = once(() => {
+  log$2.debug("Initialize remote serializer");
+  initializeRemoteCallbacks();
+  initializeRemoteSignals();
+});
+bridgeSerializer.registerCustom(callbackSerializer, "superbridge-callback");
+bridgeSerializer.registerCustom(
+  abortSignalSerializer,
+  "superbridge-abortSignal"
+);
+
+function getIPCChannelName(name) {
+  return `SUPERBRIDGE__${name}`;
+}
+
+const initializeShared = once(() => {
+  initializeRemoteSerializer();
+});
+
+const log$1 = createLogger("superbridge/main/init");
+const pendingRequests = /* @__PURE__ */ new Map();
+function initializeSuperbridgeMainMessageHandler() {
+  log$1.debug("Initialize Superbridge Main Message Handler");
+  electron.ipcMain.handle(
+    getIPCChannelName("HANDLE_RESULT"),
+    (_event, payload) => {
+      const result = bridgeSerializer.deserialize(
+        payload.payload
+      );
+      const pendingRequestController = pendingRequests.get(result.requestId);
+      if (!pendingRequestController) {
+        throw new Error(
+          `No controller found for requestId: ${result.requestId}`
+        );
+      }
+      pendingRequests.delete(result.requestId);
+      if (result.type === "success") {
+        pendingRequestController.resolve(result.result);
+      } else {
+        pendingRequestController.reject(result.error);
+      }
+    }
+  );
+  setMessagesHandler({
+    async send(type, payload, webId) {
+      if (webId === void 0) {
+        throw new Error("webId is required");
+      }
+      const requestId = generateId();
+      const targetWebContents = electron.webContents.fromId(webId);
+      if (!targetWebContents) {
+        throw new Error(`Target webContents not found for id: ${webId}`);
+      }
+      log$1.debug(`Send "${type}" with payload`, payload);
+      const [promise, controller] = createControlledPromise();
+      pendingRequests.set(requestId, controller);
+      targetWebContents.send(getIPCChannelName(type), {
+        webId: targetWebContents.id,
+        requestId,
+        payload: bridgeSerializer.serialize(payload)
+      });
+      return promise;
+    },
+    handle(type, handler) {
+      async function handleMessage(_event, payload) {
+        log$1.debug(`Handling "${type}" with payload`, payload);
+        const rawResult = await handler(
+          bridgeSerializer.deserialize(payload.payload),
+          _event
+        );
+        return bridgeSerializer.serialize(rawResult);
+      }
+      electron.ipcMain.handle(getIPCChannelName(type), handleMessage);
+      return () => {
+        electron.ipcMain.removeHandler(getIPCChannelName(type));
+      };
+    }
+  });
+}
+function initializeSuperbridgeMain(handler) {
+  log$1.debug("Initialize Superbridge Main");
+  initializeSuperbridgeMainMessageHandler();
+  initializeShared();
+  process.env.SUPERBRIDGE_SCHEMA = JSON.stringify(handler.schema);
+  $execute.handle(async (payload) => {
+    log$1.debug(`Handling execute "${payload.path}" with args`, payload.args);
+    return handler.execute(payload.path, payload.args);
+  });
+  $reset.handle(async () => {
+    log$1.debug("Handling reset");
+    await handler.reset();
+  });
+}
+
+const QUERY_SYMBOL = Symbol("query");
+function getIsQuery(value) {
+  return typeof value === "function" && QUERY_SYMBOL in value && value[QUERY_SYMBOL] === "query";
+}
+function query(handler) {
+  const queryFunction = async (...args) => {
+    return handler(...args);
+  };
+  queryFunction[QUERY_SYMBOL] = "query";
+  return queryFunction;
+}
+
+const EFFECT_SYMBOL = Symbol("effect");
+function getIsEffect(value) {
+  return typeof value === "function" && EFFECT_SYMBOL in value && value[EFFECT_SYMBOL] === "effect";
+}
+function effect(handler) {
+  const effectFunction = async (...args) => {
+    return handler(...args);
+  };
+  effectFunction[EFFECT_SYMBOL] = "effect";
+  return effectFunction;
+}
+
+const MUTATION_SYMBOL = Symbol("mutation");
+function getIsMutation(value) {
+  return typeof value === "function" && MUTATION_SYMBOL in value && value[MUTATION_SYMBOL] === "mutation";
+}
+function mutation(handler) {
+  const mutationFunction = async (...args) => {
+    return handler(...args);
+  };
+  mutationFunction[MUTATION_SYMBOL] = "mutation";
+  return mutationFunction;
+}
+
+function getIsPlainObject(value) {
+  return value?.constructor === Object;
+}
+function getPath(currentPath, key) {
+  if (!currentPath) return key;
+  return `${currentPath}.${key}`;
+}
+function buildPropertiesMap(currentPath, result, input) {
+  for (const [key, value] of Object.entries(input)) {
+    const path = getPath(currentPath, key);
+    if (getIsPlainObject(value)) {
+      buildPropertiesMap(path, result, value);
+    } else {
+      result.set(path, value);
+    }
+  }
+}
+function createNestedRecordPropertiesMap(input) {
+  const map = /* @__PURE__ */ new Map();
+  buildPropertiesMap("", map, input);
+  return map;
+}
+
+function getBridgeHandlerSchema(input) {
+  const map = createNestedRecordPropertiesMap(input);
+  const schema = {};
+  for (const [key, value] of map.entries()) {
+    if (getIsQuery(value)) {
+      schema[key] = {
+        type: "query"
+      };
+      continue;
+    }
+    if (getIsMutation(value)) {
+      schema[key] = {
+        type: "mutation"
+      };
+      continue;
+    }
+    if (getIsEffect(value)) {
+      schema[key] = {
+        type: "effect"
+      };
+      continue;
+    }
+    if (typeof value === "function") {
+      schema[key] = {
+        type: "query"
+      };
+      continue;
+    }
+    console.warn(`Unknown field type: ${key}`, value);
+  }
+  return schema;
+}
+
+const log = createLogger("superbridge/main/BridgeHandler");
+class BridgeHandler {
+  constructor(input) {
+    this.input = input;
+    this.handlersMap = createNestedRecordPropertiesMap(input);
+    this.schema = getBridgeHandlerSchema(input);
+  }
+  handlersMap;
+  schema;
+  pendingMutations = /* @__PURE__ */ new Set();
+  runningEffects = /* @__PURE__ */ new Set();
+  async waitForPendingMutations() {
+    while (this.pendingMutations.size) {
+      const promises = [...this.pendingMutations];
+      for (const promise of promises) {
+        try {
+          await promise;
+        } catch {
+        }
+      }
+    }
+  }
+  addPendingMutation(promise) {
+    this.pendingMutations.add(promise);
+    promise.finally(() => {
+      this.pendingMutations.delete(promise);
+    });
+  }
+  getHandler(path) {
+    const handler = this.handlersMap.get(path);
+    if (!handler) {
+      throw new Error(`Handler for path ${path} not found`);
+    }
+    return handler;
+  }
+  async execute(path, args) {
+    log.debug(`Execute "${path}" with args`, args);
+    const handler = this.getHandler(path);
+    if (!handler) {
+      throw new Error(`Handler for path ${path} not found`);
+    }
+    await this.waitForPendingMutations();
+    if (getIsMutation(handler)) {
+      const resultPromise = handler(...args);
+      this.addPendingMutation(resultPromise);
+      return resultPromise;
+    }
+    if (getIsEffect(handler)) {
+      const cleanupPromise = handler(...args);
+      this.runningEffects.add(cleanupPromise);
+      return async () => {
+        this.runningEffects.delete(cleanupPromise);
+        const cleanup = await cleanupPromise;
+        try {
+          cleanup();
+        } catch {
+          console.error("Error cleaning up effect");
+        }
+      };
+    }
+    return handler(...args);
+  }
+  async cleanAllEffects() {
+    const cleanupPromises = [...this.runningEffects];
+    this.runningEffects.clear();
+    for (const cleanupPromise of cleanupPromises) {
+      const cleanup = await cleanupPromise;
+      try {
+        cleanup();
+      } catch {
+        console.error("Error cleaning up effect", cleanupPromise);
+      }
+    }
+  }
+  async reset() {
+    log.debug("Reset");
+    await this.cleanAllEffects();
+    this.pendingMutations.clear();
+  }
+}
+function createBridgeHandler(input) {
+  return new BridgeHandler(input);
+}
+
+let foo = "foo";
+const bridgeHandler = createBridgeHandler({
+  ping: query(async (date, onProgress) => {
+    for (let i = 0; i < 10; i++) {
+      onProgress?.(i);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return `pong ${date.toISOString()}`;
+  }),
+  pings: effect(
+    (interval, callback) => {
+      console.log("setting interval");
+      function main(main2) {
+        console.log("main", main2);
+      }
+      const intervalId = setInterval(() => {
+        callback(/* @__PURE__ */ new Date(), main);
+      }, interval);
+      return () => {
+        console.log("clearing interval");
+        clearInterval(intervalId);
+      };
+    }
+  ),
+  foo: {
+    change: mutation(async (message) => {
+      await new Promise((resolve) => setTimeout(resolve, 1e3));
+      foo = message;
+    }),
+    get: query(async () => {
+      return foo;
+    })
+  }
+});
+
+electron.app.commandLine.appendSwitch("js-flags", "--expose-gc");
+process.env.DIST = path.join(__dirname, "../..");
+process.env.VITE_PUBLIC = electron.app.isPackaged ? process.env.DIST : path.join(process.env.DIST, "../public");
+process.env.SUPERBRIDGE_DEBUG = "true";
+let win = null;
+const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
+function createWindow() {
+  initializeSuperbridgeMain(bridgeHandler);
+  win = new electron.BrowserWindow({
+    width: 1200,
+    height: 800,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: true,
+      preload: path.join(__dirname, "preload.js")
+    }
+  });
+  setTimeout(() => {
+    $getBodyId.send().then((id) => {
+      console.log("id", id);
+    });
+  }, 2e3);
+  win.webContents.on("did-finish-load", () => {
+    win?.webContents.send("main-process-message", (/* @__PURE__ */ new Date()).toLocaleString());
+  });
+  if (VITE_DEV_SERVER_URL) {
+    win.loadURL(VITE_DEV_SERVER_URL);
+  } else {
+    win.loadFile(path.join(process.env.DIST, "index.html"));
+  }
+}
+electron.app.on("window-all-closed", () => {
+  win = null;
+  if (process.platform !== "darwin") {
+    electron.app.quit();
+  }
+});
+electron.app.whenReady().then(createWindow);
+electron.app.on("activate", () => {
+  if (electron.BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+  }
+});
+//# sourceMappingURL=main.js.map

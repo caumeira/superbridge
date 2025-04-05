@@ -1,0 +1,13 @@
+{
+  "name": "superbridge",
+  "version": "0.0.1",
+  "exports": {
+    "./preload": "./preload/index.ts",
+    "./main": "./main/index.ts",
+    "./client": "./client/index.ts",
+    ".": "./shared/index.ts"
+  },
+  "dependencies": {
+    "superjson": "^2.2.2"
+  }
+}

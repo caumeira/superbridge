@@ -1,0 +1,17 @@
+{
+  "name": "superbridge-root",
+  "version": "1.0.0",
+  "main": "index.js",
+  "private": true,
+  "workspaces": {
+    "packages": [
+      "superbridge",
+      "testapp"
+    ]
+  },
+  "scripts": {
+    "superbridge": "yarn workspace superbridge",
+    "testapp": "yarn workspace testapp"
+  },
+  "packageManager": "yarn@4.4.1"
+}
