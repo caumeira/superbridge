@@ -3,215 +3,100 @@
 const electron = require('electron');
 const path = require('path');
 
-function createLogger(name) {
-  const LOG_COLOR = "#808080";
-  const LOG_STYLE = `color: ${LOG_COLOR};`;
-  const LABEL = `%c🌉 ${name}:%c`;
-  const log2 = (...args) => {
-    console.info(LABEL, LOG_STYLE, "", ...args);
-  };
-  log2.debug = (...args) => {
-    console.debug(LABEL, LOG_STYLE, "", ...args);
-  };
-  log2.warn = (...args) => {
-    console.warn(LABEL, LOG_STYLE, "", ...args);
-  };
-  log2.error = (...args) => {
-    console.error(LABEL, LOG_STYLE, "", ...args);
-  };
-  log2.rename = (name2) => {
-    return createLogger(name2);
-  };
-  return log2;
-}
-createLogger("superbridge");
-
-const log$5 = createLogger("superbridge/messagesHandler");
-let messagesHandler = null;
-function setMessagesHandler(handler) {
-  log$5.debug("Set messages handler", handler);
-  messagesHandler = handler;
-}
-function getMessagesHandler() {
-  if (!messagesHandler) {
-    throw new Error("Messages handler not set");
+class BridgeMessageType {
+  constructor(type) {
+    this.type = type;
   }
-  return messagesHandler;
+  input;
+  output;
 }
-
-const log$4 = createLogger("superbridge/messages");
-const registeredMessageTypes = /* @__PURE__ */ new Set();
 function defineBridgeMessage(name) {
-  if (registeredMessageTypes.has(name)) {
-    log$4.warn(`Message "${name}" is already registered`);
+  return new BridgeMessageType(name);
+}
+
+const NO_VALUE = Symbol("NO_VALUE");
+class Signal {
+  listeners = /* @__PURE__ */ new Map();
+  lastValue = NO_VALUE;
+  assertLastValue(error) {
+    if (this.lastValue === NO_VALUE) {
+      throw typeof error === "string" ? new Error(error) : error;
+    }
+    return this.lastValue;
   }
-  registeredMessageTypes.add(name);
-  return {
-    name,
-    async send(payload, webId) {
-      log$4.debug(`Sending "${name}" with payload`, payload);
-      const messagesHandler = getMessagesHandler();
-      return messagesHandler.send(name, payload, webId);
-    },
-    handle(handler) {
-      const messagesHandler = getMessagesHandler();
-      return messagesHandler.handle(name, (payload, event) => {
-        log$4.debug(`Handling "${name}" with payload`, payload);
-        return handler(payload, event);
+  get hasLastValue() {
+    return this.lastValue !== NO_VALUE;
+  }
+  get maybeLastValue() {
+    return this.lastValue === NO_VALUE ? void 0 : this.lastValue;
+  }
+  emit(value) {
+    this.lastValue = value;
+    const listeners = [...this.listeners.values()];
+    for (const listener of listeners) {
+      try {
+        listener(value);
+      } catch (error) {
+        console.error(error);
+      }
+    }
+  }
+  subscribe(listener) {
+    const id = Symbol();
+    this.listeners.set(id, listener);
+    return () => {
+      this.listeners.delete(id);
+    };
+  }
+  subscribeWithCurrentValue(listener) {
+    if (this.lastValue !== NO_VALUE) {
+      listener(this.lastValue);
+    }
+    return this.subscribe(listener);
+  }
+  effect(initializer) {
+    let currentCleanup;
+    const cancelSubscription = this.subscribeWithCurrentValue((value) => {
+      if (currentCleanup) {
+        currentCleanup();
+      }
+      currentCleanup = initializer(value);
+    });
+    return () => {
+      cancelSubscription();
+      if (currentCleanup) {
+        currentCleanup();
+      }
+    };
+  }
+}
+
+const currentSuperbridgeChannel = new Signal();
+function initializeSuperbridge(superbridge) {
+  currentSuperbridgeChannel.emit(superbridge);
+}
+const bridge = {
+  send(message, payload, webId) {
+    const link = currentSuperbridgeChannel.assertLastValue(
+      "Superbridge is not initialized"
+    );
+    return link.send(message, payload, webId);
+  },
+  handle(message, handler) {
+    if (!currentSuperbridgeChannel.hasLastValue) {
+      Promise.resolve().then(() => {
+        if (!currentSuperbridgeChannel.hasLastValue) {
+          console.warn("Superbridge is not initialized");
+        }
       });
     }
-  };
-}
+    return currentSuperbridgeChannel.effect((currentBridge) => {
+      return currentBridge.handle(message, handler);
+    });
+  }
+};
 
 const $getBodyId = defineBridgeMessage("$getBodyId");
-
-const $execute = defineBridgeMessage(
-  "$execute"
-);
-const $reset = defineBridgeMessage("$reset");
-
-function createControlledPromise() {
-  let controller;
-  const promise = new Promise((_resolve, _reject) => {
-    controller = {
-      resolve: _resolve,
-      reject: _reject
-    };
-  });
-  return [promise, controller];
-}
-
-const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-function generateId(length = 12) {
-  let id = "";
-  for (let i = 0; i < length; i++) {
-    id += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
-  }
-  return id;
-}
-
-function once(fn) {
-  let called = false;
-  let result;
-  return function(...args) {
-    if (called) return result;
-    called = true;
-    result = fn(...args);
-    return result;
-  };
-}
-
-const signalRemoteController = /* @__PURE__ */ new Map();
-const $abortRemoteSignal = defineBridgeMessage("$abortRemoteSignal");
-function registerSignal(localSignal) {
-  initializeRemoteSignals();
-  const id = `$$signal-${generateId()}`;
-  const remoteController = new AbortController();
-  signalRemoteController.set(id, remoteController);
-  localSignal.addEventListener("abort", () => {
-    $abortRemoteSignal.send({ signalId: id });
-    signalRemoteController.delete(id);
-  });
-  signalFinalizationRegistry.register(localSignal, id);
-  return id;
-}
-const initializeRemoteSignals = once(function initializeRemoteSignals2() {
-  $abortRemoteSignal.handle(async ({ signalId }) => {
-    const controller = signalRemoteController.get(signalId);
-    if (!controller) return;
-    controller.abort();
-    signalRemoteController.delete(signalId);
-  });
-});
-const signalFinalizationRegistry = new FinalizationRegistry(
-  (remoteSignalId) => {
-    const controller = signalRemoteController.get(remoteSignalId);
-    if (!controller) return;
-    controller.abort();
-    signalRemoteController.delete(remoteSignalId);
-  }
-);
-function deserializeSignalId(signalId) {
-  initializeRemoteSignals();
-  const controller = new AbortController();
-  signalRemoteController.set(signalId, controller);
-  return controller.signal;
-}
-const abortSignalSerializer = {
-  isApplicable: (value) => value instanceof AbortSignal,
-  serialize: (signal) => registerSignal(signal),
-  deserialize: (signalId) => deserializeSignalId(signalId)
-};
-
-const log$3 = createLogger("superbridge/callbacks");
-const callbacks = /* @__PURE__ */ new Map();
-setInterval(() => {
-  console.log("callbacks", callbacks.size);
-}, 1e3);
-const $removeRemoteCallback = defineBridgeMessage("$removeRemoteCallback");
-const $triggerRemoteCallback = defineBridgeMessage("$triggerRemoteCallback");
-function getCallbackId(callback) {
-  let id = `$$callback-${generateId()}`;
-  if (typeof window !== "undefined") {
-    id = `${id}-${window.$superbridge.routingId}`;
-  }
-  return id;
-}
-function getCallbackRoutingId(callbackId) {
-  const [_callbackLabel, _callbackId, routingId] = callbackId.split("-");
-  if (!routingId) return null;
-  return parseInt(routingId, 10);
-}
-function registerCallback(callback) {
-  initializeRemoteCallbacks();
-  const id = getCallbackId();
-  callbacks.set(id, callback);
-  return id;
-}
-const initializeRemoteCallbacks = once(() => {
-  $removeRemoteCallback.handle(async ({ callbackId }) => {
-    log$3.debug(`Handling remove remote callback "${callbackId}"`);
-    callbacks.delete(callbackId);
-  });
-  $triggerRemoteCallback.handle(async ({ callbackId, args }) => {
-    log$3.debug(
-      `Handling trigger remote callback "${callbackId}" with callId`,
-      args
-    );
-    const callback = callbacks.get(callbackId);
-    if (!callback) {
-      throw new Error(`Callback "${callbackId}" not found`);
-    }
-    return await callback(...args);
-  });
-});
-const callbackFinalizationRegistry = new FinalizationRegistry(
-  (remoteCallbackId) => {
-    $removeRemoteCallback.send(
-      { callbackId: remoteCallbackId },
-      getCallbackRoutingId(remoteCallbackId) ?? void 0
-    );
-  }
-);
-function deserializeCallbackId(callbackId) {
-  async function remoteCallbackInvoker(...args) {
-    log$3.debug(`Invoking remote callback "${callbackId}" with args`, args);
-    return await $triggerRemoteCallback.send(
-      {
-        callbackId,
-        args
-      },
-      getCallbackRoutingId(callbackId) ?? void 0
-    );
-  }
-  callbackFinalizationRegistry.register(remoteCallbackInvoker, callbackId);
-  return remoteCallbackInvoker;
-}
-const callbackSerializer = {
-  isApplicable: (value) => typeof value === "function",
-  serialize: (callback) => registerCallback(callback),
-  deserialize: deserializeCallbackId
-};
 
 class DoubleIndexedKV {
     constructor() {
@@ -1010,97 +895,235 @@ SuperJSON.registerSymbol = SuperJSON.defaultInstance.registerSymbol.bind(SuperJS
 SuperJSON.registerCustom = SuperJSON.defaultInstance.registerCustom.bind(SuperJSON.defaultInstance);
 SuperJSON.allowErrorProps = SuperJSON.defaultInstance.allowErrorProps.bind(SuperJSON.defaultInstance);
 
-const log$2 = createLogger("superbridge/serializer");
-const bridgeSerializer = new SuperJSON();
-const initializeRemoteSerializer = once(() => {
-  log$2.debug("Initialize remote serializer");
-  initializeRemoteCallbacks();
-  initializeRemoteSignals();
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+function generateId(length = 12) {
+  let id = "";
+  for (let i = 0; i < length; i++) {
+    id += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
+  }
+  return id;
+}
+
+const signalRemoteController = /* @__PURE__ */ new Map();
+const $abortRemoteSignal = defineBridgeMessage("$abortRemoteSignal");
+function registerSignal(localSignal) {
+  const id = `$$signal-${generateId()}`;
+  const remoteController = new AbortController();
+  signalRemoteController.set(id, remoteController);
+  localSignal.addEventListener("abort", () => {
+    bridge.send($abortRemoteSignal, { signalId: id });
+    signalRemoteController.delete(id);
+  });
+  signalFinalizationRegistry.register(localSignal, id);
+  return id;
+}
+bridge.handle($abortRemoteSignal, async ({ signalId }) => {
+  const controller = signalRemoteController.get(signalId);
+  if (!controller) return;
+  controller.abort();
+  signalRemoteController.delete(signalId);
 });
+const signalFinalizationRegistry = new FinalizationRegistry(
+  (remoteSignalId) => {
+    const controller = signalRemoteController.get(remoteSignalId);
+    if (!controller) return;
+    controller.abort();
+    signalRemoteController.delete(remoteSignalId);
+  }
+);
+function deserializeSignalId(signalId) {
+  const controller = new AbortController();
+  signalRemoteController.set(signalId, controller);
+  return controller.signal;
+}
+const abortSignalSerializer = {
+  isApplicable: (value) => value instanceof AbortSignal,
+  serialize: (signal) => registerSignal(signal),
+  deserialize: (signalId) => deserializeSignalId(signalId)
+};
+
+function createLogger(name) {
+  const LOG_COLOR = "#808080";
+  const LOG_STYLE = `color: ${LOG_COLOR};`;
+  const LABEL = `%c🌉 ${name}:%c`;
+  const log2 = (...args) => {
+    console.info(LABEL, LOG_STYLE, "", ...args);
+  };
+  log2.debug = (...args) => {
+    console.debug(LABEL, LOG_STYLE, "", ...args);
+  };
+  log2.warn = (...args) => {
+    console.warn(LABEL, LOG_STYLE, "", ...args);
+  };
+  log2.error = (...args) => {
+    console.error(LABEL, LOG_STYLE, "", ...args);
+  };
+  log2.rename = (name2) => {
+    return createLogger(name2);
+  };
+  return log2;
+}
+createLogger("superbridge");
+
+const log$3 = createLogger("superbridge/callbacks");
+const callbacks = /* @__PURE__ */ new Map();
+const $removeRemoteCallback = defineBridgeMessage("$removeRemoteCallback");
+const $triggerRemoteCallback = defineBridgeMessage("$triggerRemoteCallback");
+bridge.handle($removeRemoteCallback, async ({ callbackId }) => {
+  log$3.debug(`Handling remove remote callback "${callbackId}"`);
+  callbacks.delete(callbackId);
+});
+bridge.handle($triggerRemoteCallback, async ({ callbackId, args }) => {
+  log$3.debug(
+    `Handling trigger remote callback "${callbackId}" with callId`,
+    args
+  );
+  const callback = callbacks.get(callbackId);
+  if (!callback) {
+    throw new Error(`Callback "${callbackId}" not found`);
+  }
+  return await callback(...args);
+});
+setInterval(() => {
+  console.log("callbacks", callbacks.size);
+}, 1e3);
+function getCallbackId() {
+  let id = `$$callback-${generateId()}`;
+  if (typeof window !== "undefined") {
+    id = `${id}-${window.$superbridgelink.routingId}`;
+  }
+  return id;
+}
+function getCallbackRoutingId(callbackId) {
+  const [_callbackLabel, _callbackId, routingId] = callbackId.split("-");
+  if (!routingId) return null;
+  return parseInt(routingId, 10);
+}
+function registerCallback(callback) {
+  const id = getCallbackId();
+  callbacks.set(id, callback);
+  return id;
+}
+const callbackFinalizationRegistry = new FinalizationRegistry(
+  (remoteCallbackId) => {
+    bridge.send(
+      $removeRemoteCallback,
+      { callbackId: remoteCallbackId },
+      getCallbackRoutingId(remoteCallbackId) ?? void 0
+    );
+  }
+);
+function deserializeCallbackId(callbackId) {
+  async function remoteCallbackInvoker(...args) {
+    log$3.debug(`Invoking remote callback "${callbackId}" with args`, args);
+    return await bridge.send(
+      $triggerRemoteCallback,
+      {
+        callbackId,
+        args
+      },
+      getCallbackRoutingId(callbackId) ?? void 0
+    );
+  }
+  callbackFinalizationRegistry.register(remoteCallbackInvoker, callbackId);
+  return remoteCallbackInvoker;
+}
+const callbackSerializer = {
+  isApplicable: (value) => typeof value === "function",
+  serialize: (callback) => registerCallback(callback),
+  deserialize: deserializeCallbackId
+};
+
+const bridgeSerializer = new SuperJSON();
 bridgeSerializer.registerCustom(callbackSerializer, "superbridge-callback");
 bridgeSerializer.registerCustom(
   abortSignalSerializer,
   "superbridge-abortSignal"
 );
 
+function createControlledPromise() {
+  let controller;
+  const promise = new Promise((_resolve, _reject) => {
+    controller = {
+      resolve: _resolve,
+      reject: _reject
+    };
+  });
+  return [promise, controller];
+}
+
 function getIPCChannelName(name) {
   return `SUPERBRIDGE__${name}`;
 }
 
-const initializeShared = once(() => {
-  initializeRemoteSerializer();
+const log$2 = createLogger("superbridge/main/init");
+const pendingRequests = /* @__PURE__ */ new Map();
+electron.ipcMain.handle(
+  getIPCChannelName("HANDLE_RESULT"),
+  (_event, payload) => {
+    const result = bridgeSerializer.deserialize(
+      payload.payload
+    );
+    const pendingRequestController = pendingRequests.get(result.requestId);
+    if (!pendingRequestController) {
+      throw new Error(`No controller found for requestId: ${result.requestId}`);
+    }
+    pendingRequests.delete(result.requestId);
+    if (result.type === "success") {
+      pendingRequestController.resolve(result.result);
+    } else {
+      pendingRequestController.reject(result.error);
+    }
+  }
+);
+initializeSuperbridge({
+  send(message, payload, webId) {
+    if (webId === void 0) {
+      throw new Error("webId is required");
+    }
+    const requestId = generateId();
+    const targetWebContents = electron.webContents.fromId(webId);
+    if (!targetWebContents) {
+      throw new Error(`Target webContents not found for id: ${webId}`);
+    }
+    log$2.debug(`Send "${message.type}" with payload`, payload);
+    const [promise, controller] = createControlledPromise();
+    pendingRequests.set(requestId, controller);
+    targetWebContents.send(getIPCChannelName(message.type), {
+      requestId,
+      payload: bridgeSerializer.serialize(payload)
+    });
+    return promise;
+  },
+  handle(message, handler) {
+    async function handleMessage(_event, payload) {
+      log$2.debug(`Handling "${message.type}" with payload`, payload);
+      const result = await handler(
+        bridgeSerializer.deserialize(payload.payload)
+      );
+      return bridgeSerializer.serialize(result);
+    }
+    electron.ipcMain.handle(getIPCChannelName(message.type), handleMessage);
+    return () => {
+      electron.ipcMain.removeHandler(getIPCChannelName(message.type));
+    };
+  }
 });
 
+const $execute = defineBridgeMessage(
+  "$execute"
+);
+const $reset = defineBridgeMessage("$reset");
+
 const log$1 = createLogger("superbridge/main/init");
-const pendingRequests = /* @__PURE__ */ new Map();
-function initializeSuperbridgeMainMessageHandler() {
-  log$1.debug("Initialize Superbridge Main Message Handler");
-  electron.ipcMain.handle(
-    getIPCChannelName("HANDLE_RESULT"),
-    (_event, payload) => {
-      const result = bridgeSerializer.deserialize(
-        payload.payload
-      );
-      const pendingRequestController = pendingRequests.get(result.requestId);
-      if (!pendingRequestController) {
-        throw new Error(
-          `No controller found for requestId: ${result.requestId}`
-        );
-      }
-      pendingRequests.delete(result.requestId);
-      if (result.type === "success") {
-        pendingRequestController.resolve(result.result);
-      } else {
-        pendingRequestController.reject(result.error);
-      }
-    }
-  );
-  setMessagesHandler({
-    async send(type, payload, webId) {
-      if (webId === void 0) {
-        throw new Error("webId is required");
-      }
-      const requestId = generateId();
-      const targetWebContents = electron.webContents.fromId(webId);
-      if (!targetWebContents) {
-        throw new Error(`Target webContents not found for id: ${webId}`);
-      }
-      log$1.debug(`Send "${type}" with payload`, payload);
-      const [promise, controller] = createControlledPromise();
-      pendingRequests.set(requestId, controller);
-      targetWebContents.send(getIPCChannelName(type), {
-        webId: targetWebContents.id,
-        requestId,
-        payload: bridgeSerializer.serialize(payload)
-      });
-      return promise;
-    },
-    handle(type, handler) {
-      async function handleMessage(_event, payload) {
-        log$1.debug(`Handling "${type}" with payload`, payload);
-        const rawResult = await handler(
-          bridgeSerializer.deserialize(payload.payload),
-          _event
-        );
-        return bridgeSerializer.serialize(rawResult);
-      }
-      electron.ipcMain.handle(getIPCChannelName(type), handleMessage);
-      return () => {
-        electron.ipcMain.removeHandler(getIPCChannelName(type));
-      };
-    }
-  });
-}
 function initializeSuperbridgeMain(handler) {
   log$1.debug("Initialize Superbridge Main");
-  initializeSuperbridgeMainMessageHandler();
-  initializeShared();
   process.env.SUPERBRIDGE_SCHEMA = JSON.stringify(handler.schema);
-  $execute.handle(async (payload) => {
+  bridge.handle($execute, async (payload) => {
     log$1.debug(`Handling execute "${payload.path}" with args`, payload.args);
     return handler.execute(payload.path, payload.args);
   });
-  $reset.handle(async () => {
+  bridge.handle($reset, async () => {
     log$1.debug("Handling reset");
     await handler.reset();
   });
@@ -1335,7 +1358,7 @@ function createWindow() {
     }
   });
   setTimeout(() => {
-    $getBodyId.send().then((id) => {
+    bridge.send($getBodyId, void 0, win?.webContents.id).then((id) => {
       console.log("id", id);
     });
   }, 2e3);

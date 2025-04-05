@@ -1,7 +1,7 @@
 import { CustomTransfomer } from "./types";
+import { bridge } from "../superbridge";
 import { defineBridgeMessage } from "../defineMessage";
 import { generateId } from "../../utils/id";
-import { once } from "../../utils/once";
 
 const signalRemoteController = new Map<string, AbortController>();
 
@@ -10,8 +10,6 @@ export const $abortRemoteSignal = defineBridgeMessage<{
 }>("$abortRemoteSignal");
 
 export function registerSignal(localSignal: AbortSignal) {
-  initializeRemoteSignals();
-
   const id = `$$signal-${generateId()}`;
   const remoteController = new AbortController();
 
@@ -19,7 +17,7 @@ export function registerSignal(localSignal: AbortSignal) {
 
   // If local signal is aborted, abort the remote one
   localSignal.addEventListener("abort", () => {
-    $abortRemoteSignal.send({ signalId: id });
+    bridge.send($abortRemoteSignal, { signalId: id });
     signalRemoteController.delete(id);
   });
 
@@ -28,15 +26,13 @@ export function registerSignal(localSignal: AbortSignal) {
   return id;
 }
 
-export const initializeRemoteSignals = once(function initializeRemoteSignals() {
-  $abortRemoteSignal.handle(async ({ signalId }) => {
-    const controller = signalRemoteController.get(signalId);
+bridge.handle($abortRemoteSignal, async ({ signalId }) => {
+  const controller = signalRemoteController.get(signalId);
 
-    if (!controller) return;
+  if (!controller) return;
 
-    controller.abort();
-    signalRemoteController.delete(signalId);
-  });
+  controller.abort();
+  signalRemoteController.delete(signalId);
 });
 
 const signalFinalizationRegistry = new FinalizationRegistry<string>(
@@ -51,8 +47,6 @@ const signalFinalizationRegistry = new FinalizationRegistry<string>(
 );
 
 function deserializeSignalId(signalId: string): AbortSignal {
-  initializeRemoteSignals();
-
   const controller = new AbortController();
 
   signalRemoteController.set(signalId, controller);

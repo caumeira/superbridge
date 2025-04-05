@@ -65,7 +65,10 @@ function createSuperbridgeInterface() {
   };
 }
 function initializeSuperbridgePreload() {
-  electron.contextBridge.exposeInMainWorld("$superbridge", createSuperbridgeInterface());
+  electron.contextBridge.exposeInMainWorld(
+    "$superbridgelink",
+    createSuperbridgeInterface()
+  );
 }
 
 initializeSuperbridgePreload();

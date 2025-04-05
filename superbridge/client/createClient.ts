@@ -1,3 +1,4 @@
+import "./init";
 import { type BridgeHandler, BridgeHandlerInput } from "../main/BridgeHandler";
 import { Effect } from "../main/effect";
 import { Mutation } from "../main/mutation";
@@ -6,7 +7,7 @@ import { createLogger } from "../shared/log";
 import { $execute, $reset } from "../shared/messages";
 import { generateId } from "../utils/id";
 import { unwrapNestedRecord } from "../utils/nestedRecord";
-import { initializeSuperbridgeClient } from "./init";
+import { bridge } from "../shared/superbridge";
 
 const CLIENT_SYMBOL = Symbol("superbridge-client");
 
@@ -41,7 +42,7 @@ function createQueryClient<Args extends any[], Result>(path: string) {
     log.debug(`Query "${path}" with args`, args);
     await resetPromise;
 
-    return $execute.send({
+    return bridge.send($execute, {
       id: generateId(),
       path,
       args,
@@ -54,7 +55,7 @@ function createMutationClient<Args extends any[], Result>(path: string) {
     log.debug(`Mutation "${path}" with args`, args);
     await resetPromise;
 
-    return $execute.send({
+    return bridge.send($execute, {
       id: generateId(),
       path,
       args,
@@ -66,7 +67,7 @@ function createEffectClient<Args extends any[]>(path: string) {
   return function effect(...args: Args) {
     log.debug(`Effect "${path}" with args`, args);
     const maybeCleanupPromise = resetPromise.then(() =>
-      $execute.send({
+      bridge.send($execute, {
         id: generateId(),
         path,
         args,
@@ -92,11 +93,9 @@ let resetPromise: Promise<void>;
 export function createSuperbridgeClient<
   T extends BridgeHandler<any>
 >(): SuperbridgeClient<T["input"]> {
-  initializeSuperbridgeClient();
+  resetPromise = bridge.send($reset, undefined);
 
-  resetPromise = $reset.send();
-
-  const schema = window.$superbridge.schema;
+  const schema = window.$superbridgelink.schema;
 
   if (!schema) {
     throw new Error("Schema is not initialized");

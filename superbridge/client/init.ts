@@ -1,73 +1,66 @@
-import { MessageHandler, setMessagesHandler } from "../shared/messagesHandler";
+import "../shared/init";
 
-import { type SuperBridgeInterface } from "../preload";
-import { initializeShared } from "../shared/init";
-import { createLogger } from "../shared/log";
+import { BridgeMessageType } from "../shared/defineMessage";
 import { HandleResult } from "../shared/messages";
 import { bridgeSerializer } from "../shared/serializer";
 import { generateId } from "../utils/id";
+import { initializeSuperbridge } from "../shared/superbridge";
 
-const log = createLogger("superbridge/client/init");
+const $superbridgelink = window.$superbridgelink;
 
-const $superbridge = window.$superbridge as SuperBridgeInterface;
-
-function initializeSuperbridgeHandler() {
-  setMessagesHandler({
-    async send<I, O>(type: string, payload: I, webId?: number) {
-      if (webId !== undefined) {
-        console.warn(
-          "Sending message to specific webContents is not supported in the client"
-        );
-        webId = undefined;
-      }
-
-      const requestId = generateId();
-      const result = await $superbridge.send(type, {
-        requestId,
-        webId: $superbridge.routingId,
-        payload: bridgeSerializer.serialize(payload),
-      });
-
-      return bridgeSerializer.deserialize(result) as O;
-    },
-    handle<I, O>(type: string, handler: MessageHandler<I, O>) {
-      return $superbridge.handle(
-        type,
-        async ({ requestId, payload }, event) => {
-          try {
-            const result = await handler(
-              bridgeSerializer.deserialize(payload) as I,
-              event
-            );
-
-            await $superbridge.send("HANDLE_RESULT", {
-              requestId,
-              webId: $superbridge.routingId,
-              payload: bridgeSerializer.serialize({
-                requestId,
-                type: "success",
-                result,
-              } as HandleResult<O>),
-            });
-          } catch (error) {
-            await $superbridge.send("HANDLE_RESULT", {
-              requestId,
-              webId: $superbridge.routingId,
-              payload: bridgeSerializer.serialize({
-                requestId,
-                type: "error",
-                error,
-              } as HandleResult<O>),
-            });
-          }
-        }
+initializeSuperbridge({
+  async send<I, O>(
+    message: BridgeMessageType<I, O>,
+    payload: I,
+    webId?: number
+  ) {
+    if (webId !== undefined) {
+      console.warn(
+        "Sending message to specific webContents is not supported in the client"
       );
-    },
-  });
-}
+      webId = undefined;
+    }
 
-export function initializeSuperbridgeClient() {
-  log.debug("Initialize Superbridge Client");
-  initializeSuperbridgeHandler();
-  initializeShared();
-}
+    const requestId = generateId();
+
+    const result = await $superbridgelink.send(message.type, {
+      requestId,
+      payload: bridgeSerializer.serialize(payload),
+    });
+
+    return bridgeSerializer.deserialize(result) as O;
+  },
+  handle<I, O>(
+    message: BridgeMessageType<I, O>,
+    handler: (payload: I) => Promise<O>
+  ) {
+    return $superbridgelink.handle(
+      message.type,
+      async ({ requestId, payload }) => {
+        try {
+          const result = await handler(
+            bridgeSerializer.deserialize(payload) as I
+          );
+
+          await $superbridgelink.send("HANDLE_RESULT", {
+            requestId,
+            payload: bridgeSerializer.serialize({
+              requestId,
+              type: "success",
+              result,
+            } as HandleResult<O>),
+          });
+        } catch (error) {
+          await $superbridgelink.send("HANDLE_RESULT", {
+            requestId,
+            payload: bridgeSerializer.serialize({
+              requestId,
+              type: "error",
+              error,
+            } as HandleResult<O>),
+          });
+        }
+      }
+    );
+  },
+});

@@ -1,3 +1,5 @@
+import "./init";
+
 export {
   type SuperbridgeClient,
   createSuperbridgeClient,

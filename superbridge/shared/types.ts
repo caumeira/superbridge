@@ -10,6 +10,5 @@ export type MaybePromise<T> = T | Promise<T>;
 
 export interface RawBridgeData {
   requestId: string;
-  webId: number;
   payload: SuperJSONResult;
 }

@@ -1,16 +1,12 @@
 import { CustomTransfomer } from "./types";
+import { bridge } from "../superbridge";
 import { createLogger } from "../log";
 import { defineBridgeMessage } from "../defineMessage";
 import { generateId } from "../../utils/id";
-import { once } from "../../utils/once";
 
 const log = createLogger("superbridge/callbacks");
 
 const callbacks = new Map<string, Function>();
-
-setInterval(() => {
-  console.log("callbacks", callbacks.size);
-}, 1000);
 
 export const $removeRemoteCallback = defineBridgeMessage<{
   callbackId: string;
@@ -24,11 +20,34 @@ export const $triggerRemoteCallback = defineBridgeMessage<
   unknown
 >("$triggerRemoteCallback");
 
-function getCallbackId(callback: Function) {
+bridge.handle($removeRemoteCallback, async ({ callbackId }) => {
+  log.debug(`Handling remove remote callback "${callbackId}"`);
+  callbacks.delete(callbackId);
+});
+
+bridge.handle($triggerRemoteCallback, async ({ callbackId, args }) => {
+  log.debug(
+    `Handling trigger remote callback "${callbackId}" with callId`,
+    args
+  );
+  const callback = callbacks.get(callbackId);
+
+  if (!callback) {
+    throw new Error(`Callback "${callbackId}" not found`);
+  }
+
+  return await callback(...args);
+});
+
+setInterval(() => {
+  console.log("callbacks", callbacks.size);
+}, 1000);
+
+function getCallbackId() {
   let id = `$$callback-${generateId()}`;
 
   if (typeof window !== "undefined") {
-    id = `${id}-${window.$superbridge.routingId}`;
+    id = `${id}-${window.$superbridgelink.routingId}`;
   }
 
   return id;
@@ -46,40 +65,17 @@ function getCallbackRoutingId(callbackId: string) {
 }
 
 export function registerCallback(callback: Function) {
-  initializeRemoteCallbacks();
-
-  const id = getCallbackId(callback);
+  const id = getCallbackId();
 
   callbacks.set(id, callback);
 
   return id;
 }
 
-export const initializeRemoteCallbacks = once(() => {
-  // Shared between renderer and main
-  $removeRemoteCallback.handle(async ({ callbackId }) => {
-    log.debug(`Handling remove remote callback "${callbackId}"`);
-    callbacks.delete(callbackId);
-  });
-
-  $triggerRemoteCallback.handle(async ({ callbackId, args }) => {
-    log.debug(
-      `Handling trigger remote callback "${callbackId}" with callId`,
-      args
-    );
-    const callback = callbacks.get(callbackId);
-
-    if (!callback) {
-      throw new Error(`Callback "${callbackId}" not found`);
-    }
-
-    return await callback(...args);
-  });
-});
-
 const callbackFinalizationRegistry = new FinalizationRegistry<string>(
   (remoteCallbackId) => {
-    $removeRemoteCallback.send(
+    bridge.send(
+      $removeRemoteCallback,
       { callbackId: remoteCallbackId },
       getCallbackRoutingId(remoteCallbackId) ?? undefined
     );
@@ -90,7 +86,8 @@ function deserializeCallbackId(callbackId: string) {
   async function remoteCallbackInvoker(...args: unknown[]) {
     log.debug(`Invoking remote callback "${callbackId}" with args`, args);
 
-    return await $triggerRemoteCallback.send(
+    return await bridge.send(
+      $triggerRemoteCallback,
       {
         callbackId: callbackId,
         args,

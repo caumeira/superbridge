@@ -1,6 +1,7 @@
 import { BrowserWindow, app } from "electron";
 
 import { $getBodyId } from "../bridge/message";
+import { bridge } from "../../../superbridge/shared/superbridge";
 import { bridgeHandler } from "../bridge/handler";
 import { initializeSuperbridgeMain } from "superbridge/main";
 import path from "path";
@@ -42,7 +43,7 @@ function createWindow() {
   });
 
   setTimeout(() => {
-    $getBodyId.send().then((id) => {
+    bridge.send($getBodyId, undefined, win?.webContents.id).then((id) => {
       console.log("id", id);
     });
   }, 2000);
