@@ -4,6 +4,7 @@ import { resolve } from "path";
 
 export default defineConfig({
   build: {
+    minify: false,
     lib: {
       entry: {
         preload: resolve(__dirname, "preload/index.ts"),
@@ -12,15 +13,21 @@ export default defineConfig({
         shared: resolve(__dirname, "shared/index.ts"),
       },
       formats: ["es", "cjs"],
-      // fileName: (format, entryName) => {
-      //   const formatExt = format === "es" ? "js" : "cjs";
-      //   return `${entryName}/index.${formatExt}`;
-      // },
+      fileName: (format, entryName) => {
+        const formatExt = format === "es" ? "js" : "cjs";
+        return `${entryName}/index.${formatExt}`;
+      },
     },
     rollupOptions: {
       external: ["electron", "superjson"],
       output: {
         preserveModules: false,
+        entryFileNames: "[name]/index.[format].js",
+        chunkFileNames: (chunkInfo) => {
+          const name = chunkInfo.name;
+          return `utils/${name}.[format].js`;
+        },
+        assetFileNames: "[name].[ext]",
       },
     },
   },

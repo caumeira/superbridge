@@ -8,3 +8,5 @@ export const appClient = createSuperbridgeClient<AppBridge>();
 bridge.handle($getBody, async () => {
   return document.body.innerHTML;
 });
+
+console.log("appClient", appClient);
