@@ -12,6 +12,8 @@ const dependencies = Object.keys(packageJson.dependencies || {});
 const peerDependencies = Object.keys(packageJson.peerDependencies || {});
 const allExternalDeps = [...dependencies, ...peerDependencies];
 
+console.log(allExternalDeps);
+
 export type BundleName = "main" | "preload" | "client" | "shared";
 
 export function createBundleConfig(name: BundleName): UserConfig {
@@ -20,7 +22,7 @@ export function createBundleConfig(name: BundleName): UserConfig {
       outDir: `dist/${name}`,
       sourcemap: true,
       minify: false,
-      emptyOutDir: true,
+      emptyOutDir: false,
 
       lib: {
         entry: resolve(__dirname, `../${name}/index.ts`),

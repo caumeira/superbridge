@@ -23,15 +23,11 @@ async function devAll() {
       })
     );
 
-    // Start types generation in watch mode
+    // Start type definitions generation in watch mode
     console.log("Starting type definitions generation in watch mode...");
-    await execa(
-      "vite",
-      ["build", "--watch", "--config", "vite/vite.types.ts"],
-      {
-        stdio: "inherit",
-      }
-    );
+    await execa("tsc", ["--emitDeclarationOnly", "--watch"], {
+      stdio: "inherit",
+    });
   } catch (error) {
     console.error("Error in development mode:", error);
     process.exit(1);

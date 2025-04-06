@@ -33,10 +33,14 @@
   "scripts": {
     "build": "node  --loader ts-node/esm ./vite/build.ts",
     "dev": "node  --loader ts-node/esm ./vite/dev.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "ts:types": "tsc --watch --project tsconfig.json"
   },
   "dependencies": {
     "superjson": "^2.2.2"
+  },
+  "peerDependencies": {
+    "electron": "*"
   },
   "devDependencies": {
     "execa": "^8.0.1",

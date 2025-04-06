@@ -4967,6 +4967,8 @@ __metadata:
     typescript: "npm:^5.0.0"
     vite: "npm:^5.0.0"
     vite-plugin-dts: "npm:^3.0.0"
+  peerDependencies:
+    electron: "*"
   languageName: unknown
   linkType: soft
 

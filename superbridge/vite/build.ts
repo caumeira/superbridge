@@ -17,9 +17,9 @@ async function buildAll() {
       })
     );
 
-    // Build types after all bundles are built
+    // Generate type definitions
     console.log("Generating type definitions...");
-    await execa("vite", ["build", "--config", "vite/vite.types.ts"], {
+    await execa("tsc", ["--emitDeclarationOnly"], {
       stdio: "inherit",
     });
 
