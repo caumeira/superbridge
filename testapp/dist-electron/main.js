@@ -3,96 +3,99 @@
 const electron = require('electron');
 const path = require('path');
 
-var __defProp$1 = Object.defineProperty;
-var __defNormalProp$1 = (obj, key, value) => key in obj ? __defProp$1(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
-var __publicField$1 = (obj, key, value) => __defNormalProp$1(obj, typeof key !== "symbol" ? key + "" : key, value);
-let BridgeMessageType$1 = class BridgeMessageType {
-  constructor(type) {
-    __publicField$1(this, "input");
-    __publicField$1(this, "output");
-    this.type = type;
-  }
-};
-function defineBridgeMessage$1(name) {
-  return new BridgeMessageType$1(name);
-}
-const NO_VALUE$2 = Symbol("NO_VALUE");
-let Signal$2 = class Signal {
+var u$1 = Object.defineProperty;
+var o$1 = (s, e, t) => e in s ? u$1(s, e, { enumerable: true, configurable: true, writable: true, value: t }) : s[e] = t;
+var i = (s, e, t) => o$1(s, typeof e != "symbol" ? e + "" : e, t);
+const r = Symbol("NO_VALUE");
+let c$1 = class c {
   constructor() {
-    __publicField$1(this, "listeners", /* @__PURE__ */ new Map());
-    __publicField$1(this, "lastValue", NO_VALUE$2);
+    i(this, "listeners", /* @__PURE__ */ new Map());
+    i(this, "lastValue", r);
   }
-  assertLastValue(error) {
-    if (this.lastValue === NO_VALUE$2) {
-      throw typeof error === "string" ? new Error(error) : error;
-    }
+  assertLastValue(e) {
+    if (this.lastValue === r)
+      throw typeof e == "string" ? new Error(e) : e;
     return this.lastValue;
   }
   get hasLastValue() {
-    return this.lastValue !== NO_VALUE$2;
+    return this.lastValue !== r;
   }
   get maybeLastValue() {
-    return this.lastValue === NO_VALUE$2 ? void 0 : this.lastValue;
+    return this.lastValue === r ? void 0 : this.lastValue;
   }
-  emit(value) {
-    this.lastValue = value;
-    const listeners = [...this.listeners.values()];
-    for (const listener of listeners) {
+  emit(e) {
+    this.lastValue = e;
+    const t = [...this.listeners.values()];
+    for (const a of t)
       try {
-        listener(value);
-      } catch (error) {
-        console.error(error);
+        a(e);
+      } catch (l) {
+        console.error(l);
       }
-    }
   }
-  subscribe(listener) {
-    const id = Symbol();
-    this.listeners.set(id, listener);
-    return () => {
-      this.listeners.delete(id);
+  subscribe(e) {
+    const t = Symbol();
+    return this.listeners.set(t, e), () => {
+      this.listeners.delete(t);
     };
   }
-  subscribeWithCurrentValue(listener) {
-    if (this.lastValue !== NO_VALUE$2) {
-      listener(this.lastValue);
-    }
-    return this.subscribe(listener);
+  subscribeWithCurrentValue(e) {
+    return this.lastValue !== r && e(this.lastValue), this.subscribe(e);
   }
-  effect(initializer) {
-    let currentCleanup;
-    const cancelSubscription = this.subscribeWithCurrentValue((value) => {
-      if (currentCleanup) {
-        currentCleanup();
-      }
-      currentCleanup = initializer(value);
+  effect(e) {
+    let t;
+    const a = this.subscribeWithCurrentValue((l) => {
+      t && t(), t = e(l);
     });
     return () => {
-      cancelSubscription();
-      if (currentCleanup) {
-        currentCleanup();
-      }
+      a(), t && t();
     };
   }
 };
-new Signal$2();
+const n$1 = new c$1();
+function b$2(s) {
+  n$1.emit(s);
+}
+const d$2 = {
+  send(s, e, t) {
+    return n$1.assertLastValue(
+      "Superbridge is not initialized"
+    ).send(s, e, t);
+  },
+  handle(s, e) {
+    return n$1.hasLastValue || Promise.resolve().then(() => {
+      n$1.hasLastValue || console.warn("Superbridge is not initialized");
+    }), n$1.effect((t) => t.handle(s, e));
+  }
+};
+class h {
+  constructor(e) {
+    i(this, "input");
+    i(this, "output");
+    this.type = e;
+  }
+}
+function f$1(s) {
+  return new h(s);
+}
 
-const $getBody = defineBridgeMessage$1("$getBodyId");
+const $getBody = f$1("$getBodyId");
 
-const NO_VALUE$1 = Symbol("NO_VALUE");
-let Signal$1 = class Signal {
+const NO_VALUE = Symbol("NO_VALUE");
+class Signal {
   listeners = /* @__PURE__ */ new Map();
-  lastValue = NO_VALUE$1;
+  lastValue = NO_VALUE;
   assertLastValue(error) {
-    if (this.lastValue === NO_VALUE$1) {
+    if (this.lastValue === NO_VALUE) {
       throw typeof error === "string" ? new Error(error) : error;
     }
     return this.lastValue;
   }
   get hasLastValue() {
-    return this.lastValue !== NO_VALUE$1;
+    return this.lastValue !== NO_VALUE;
   }
   get maybeLastValue() {
-    return this.lastValue === NO_VALUE$1 ? void 0 : this.lastValue;
+    return this.lastValue === NO_VALUE ? void 0 : this.lastValue;
   }
   emit(value) {
     this.lastValue = value;
@@ -113,7 +116,7 @@ let Signal$1 = class Signal {
     };
   }
   subscribeWithCurrentValue(listener) {
-    if (this.lastValue !== NO_VALUE$1) {
+    if (this.lastValue !== NO_VALUE) {
       listener(this.lastValue);
     }
     return this.subscribe(listener);
@@ -133,25 +136,25 @@ let Signal$1 = class Signal {
       }
     };
   }
-};
+}
 
-const currentSuperbridgeChannel$1 = new Signal$1();
-const bridge$1 = {
+const currentSuperbridgeChannel = new Signal();
+const bridge = {
   send(message, payload, webId) {
-    const link = currentSuperbridgeChannel$1.assertLastValue(
+    const link = currentSuperbridgeChannel.assertLastValue(
       "Superbridge is not initialized"
     );
     return link.send(message, payload, webId);
   },
   handle(message, handler) {
-    if (!currentSuperbridgeChannel$1.hasLastValue) {
+    if (!currentSuperbridgeChannel.hasLastValue) {
       Promise.resolve().then(() => {
-        if (!currentSuperbridgeChannel$1.hasLastValue) {
+        if (!currentSuperbridgeChannel.hasLastValue) {
           console.warn("Superbridge is not initialized");
         }
       });
     }
-    return currentSuperbridgeChannel$1.effect((currentBridge) => {
+    return currentSuperbridgeChannel.effect((currentBridge) => {
       return currentBridge.handle(message, handler);
     });
   }
@@ -954,490 +957,316 @@ SuperJSON.registerSymbol = SuperJSON.defaultInstance.registerSymbol.bind(SuperJS
 SuperJSON.registerCustom = SuperJSON.defaultInstance.registerCustom.bind(SuperJSON.defaultInstance);
 SuperJSON.allowErrorProps = SuperJSON.defaultInstance.allowErrorProps.bind(SuperJSON.defaultInstance);
 
-var __defProp = Object.defineProperty;
-var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
-var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
-const NO_VALUE = Symbol("NO_VALUE");
-class Signal {
-  constructor() {
-    __publicField(this, "listeners", /* @__PURE__ */ new Map());
-    __publicField(this, "lastValue", NO_VALUE);
-  }
-  assertLastValue(error) {
-    if (this.lastValue === NO_VALUE) {
-      throw typeof error === "string" ? new Error(error) : error;
-    }
-    return this.lastValue;
-  }
-  get hasLastValue() {
-    return this.lastValue !== NO_VALUE;
-  }
-  get maybeLastValue() {
-    return this.lastValue === NO_VALUE ? void 0 : this.lastValue;
-  }
-  emit(value) {
-    this.lastValue = value;
-    const listeners = [...this.listeners.values()];
-    for (const listener of listeners) {
-      try {
-        listener(value);
-      } catch (error) {
-        console.error(error);
-      }
-    }
-  }
-  subscribe(listener) {
-    const id = Symbol();
-    this.listeners.set(id, listener);
-    return () => {
-      this.listeners.delete(id);
-    };
-  }
-  subscribeWithCurrentValue(listener) {
-    if (this.lastValue !== NO_VALUE) {
-      listener(this.lastValue);
-    }
-    return this.subscribe(listener);
-  }
-  effect(initializer) {
-    let currentCleanup;
-    const cancelSubscription = this.subscribeWithCurrentValue((value) => {
-      if (currentCleanup) {
-        currentCleanup();
-      }
-      currentCleanup = initializer(value);
-    });
-    return () => {
-      cancelSubscription();
-      if (currentCleanup) {
-        currentCleanup();
-      }
-    };
-  }
+function c(s) {
+  const e = "color: #808080;", n = `%c🌉 ${s}:%c`, r = (...o) => {
+    console.info(n, e, "", ...o);
+  };
+  return r.debug = (...o) => {
+    console.debug(n, e, "", ...o);
+  }, r.warn = (...o) => {
+    console.warn(n, e, "", ...o);
+  }, r.error = (...o) => {
+    console.error(n, e, "", ...o);
+  }, r.rename = (o) => c(o), r;
 }
-const currentSuperbridgeChannel = new Signal();
-function initializeSuperbridge(superbridge) {
-  currentSuperbridgeChannel.emit(superbridge);
+c("superbridge");
+
+const f = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+function p$1(e = 12) {
+  let t = "";
+  for (let n = 0; n < e; n++)
+    t += f[Math.floor(Math.random() * f.length)];
+  return t;
 }
-const bridge = {
-  send(message, payload, webId) {
-    const link = currentSuperbridgeChannel.assertLastValue(
-      "Superbridge is not initialized"
-    );
-    return link.send(message, payload, webId);
-  },
-  handle(message, handler) {
-    if (!currentSuperbridgeChannel.hasLastValue) {
-      Promise.resolve().then(() => {
-        if (!currentSuperbridgeChannel.hasLastValue) {
-          console.warn("Superbridge is not initialized");
-        }
-      });
-    }
-    return currentSuperbridgeChannel.effect((currentBridge) => {
-      return currentBridge.handle(message, handler);
-    });
-  }
-};
-class BridgeMessageType {
-  constructor(type) {
-    __publicField(this, "input");
-    __publicField(this, "output");
-    this.type = type;
-  }
+const a = /* @__PURE__ */ new Map(), $ = f$1("$abortRemoteSignal");
+function S$1(e) {
+  const t = `$$signal-${p$1()}`, n = new AbortController();
+  return a.set(t, n), e.addEventListener("abort", () => {
+    d$2.send($, { signalId: t }), a.delete(t);
+  }), A.register(e, t), t;
 }
-function defineBridgeMessage(name) {
-  return new BridgeMessageType(name);
-}
-const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-function generateId(length = 12) {
-  let id = "";
-  for (let i = 0; i < length; i++) {
-    id += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
-  }
-  return id;
-}
-const signalRemoteController = /* @__PURE__ */ new Map();
-const $abortRemoteSignal = defineBridgeMessage("$abortRemoteSignal");
-function registerSignal(localSignal) {
-  const id = `$$signal-${generateId()}`;
-  const remoteController = new AbortController();
-  signalRemoteController.set(id, remoteController);
-  localSignal.addEventListener("abort", () => {
-    bridge.send($abortRemoteSignal, { signalId: id });
-    signalRemoteController.delete(id);
-  });
-  signalFinalizationRegistry.register(localSignal, id);
-  return id;
-}
-bridge.handle($abortRemoteSignal, async ({ signalId }) => {
-  const controller = signalRemoteController.get(signalId);
-  if (!controller) return;
-  controller.abort();
-  signalRemoteController.delete(signalId);
+d$2.handle($, async ({ signalId: e }) => {
+  const t = a.get(e);
+  t && (t.abort(), a.delete(e));
 });
-const signalFinalizationRegistry = new FinalizationRegistry(
-  (remoteSignalId) => {
-    const controller = signalRemoteController.get(remoteSignalId);
-    if (!controller) return;
-    controller.abort();
-    signalRemoteController.delete(remoteSignalId);
+const A = new FinalizationRegistry(
+  (e) => {
+    const t = a.get(e);
+    t && (t.abort(), a.delete(e));
   }
 );
-function deserializeSignalId(signalId) {
-  const controller = new AbortController();
-  signalRemoteController.set(signalId, controller);
-  return controller.signal;
+function M$1(e) {
+  const t = new AbortController();
+  return a.set(e, t), t.signal;
 }
-const abortSignalSerializer = {
-  isApplicable: (value) => value instanceof AbortSignal,
-  serialize: (signal) => registerSignal(signal),
-  deserialize: (signalId) => deserializeSignalId(signalId)
-};
-function createLogger(name) {
-  const LOG_COLOR = "#808080";
-  const LOG_STYLE = `color: ${LOG_COLOR};`;
-  const LABEL = `%c🌉 ${name}:%c`;
-  const log2 = (...args) => {
-    console.info(LABEL, LOG_STYLE, "", ...args);
-  };
-  log2.debug = (...args) => {
-    console.debug(LABEL, LOG_STYLE, "", ...args);
-  };
-  log2.warn = (...args) => {
-    console.warn(LABEL, LOG_STYLE, "", ...args);
-  };
-  log2.error = (...args) => {
-    console.error(LABEL, LOG_STYLE, "", ...args);
-  };
-  log2.rename = (name2) => {
-    return createLogger(name2);
-  };
-  return log2;
-}
-createLogger("superbridge");
-const log$2 = createLogger("superbridge/callbacks");
-const callbacks = /* @__PURE__ */ new Map();
-const $removeRemoteCallback = defineBridgeMessage("$removeRemoteCallback");
-const $triggerRemoteCallback = defineBridgeMessage("$triggerRemoteCallback");
-bridge.handle($removeRemoteCallback, async ({ callbackId }) => {
-  log$2.debug(`Handling remove remote callback "${callbackId}"`);
-  callbacks.delete(callbackId);
+const v = {
+  isApplicable: (e) => e instanceof AbortSignal,
+  serialize: (e) => S$1(e),
+  deserialize: (e) => M$1(e)
+}, d$1 = c("superbridge/callbacks"), b$1 = /* @__PURE__ */ new Map(), m$1 = f$1("$removeRemoteCallback"), k$1 = f$1("$triggerRemoteCallback");
+d$2.handle(m$1, async ({ callbackId: e }) => {
+  d$1.debug(`Handling remove remote callback "${e}"`), b$1.delete(e);
 });
-bridge.handle($triggerRemoteCallback, async ({ callbackId, args }) => {
-  log$2.debug(
-    `Handling trigger remote callback "${callbackId}" with callId`,
-    args
+d$2.handle(k$1, async ({ callbackId: e, args: t }) => {
+  d$1.debug(
+    `Handling trigger remote callback "${e}" with callId`,
+    t
   );
-  const callback = callbacks.get(callbackId);
-  if (!callback) {
-    throw new Error(`Callback "${callbackId}" not found`);
-  }
-  return await callback(...args);
+  const n = b$1.get(e);
+  if (!n)
+    throw new Error(`Callback "${e}" not found`);
+  return await n(...t);
 });
-function getCallbackId() {
-  let id = `$$callback-${generateId()}`;
-  if (typeof window !== "undefined") {
-    id = `${id}-${window.$superbridgeinterface.routingId}`;
-  }
-  return id;
+function I() {
+  let e = `$$callback-${p$1()}`;
+  return typeof window < "u" && (e = `${e}-${window.$superbridgeinterface.routingId}`), e;
 }
-function getCallbackRoutingId(callbackId) {
-  const [_callbackLabel, _callbackId, routingId] = callbackId.split("-");
-  if (!routingId) return null;
-  return parseInt(routingId, 10);
+function w(e) {
+  const [t, n, o] = e.split("-");
+  return o ? parseInt(o, 10) : null;
 }
-function registerCallback(callback) {
-  const id = getCallbackId();
-  callbacks.set(id, callback);
-  return id;
+function j$1(e) {
+  const t = I();
+  return b$1.set(t, e), t;
 }
-const callbackFinalizationRegistry = new FinalizationRegistry(
-  (remoteCallbackId) => {
-    bridge.send(
-      $removeRemoteCallback,
-      { callbackId: remoteCallbackId },
-      getCallbackRoutingId(remoteCallbackId) ?? void 0
+const O = new FinalizationRegistry(
+  (e) => {
+    d$2.send(
+      m$1,
+      { callbackId: e },
+      w(e) ?? void 0
     );
   }
 );
-function deserializeCallbackId(callbackId) {
-  async function remoteCallbackInvoker(...args) {
-    log$2.debug(`Invoking remote callback "${callbackId}" with args`, args);
-    return await bridge.send(
-      $triggerRemoteCallback,
+function F$1(e) {
+  async function t(...n) {
+    return d$1.debug(`Invoking remote callback "${e}" with args`, n), await d$2.send(
+      k$1,
       {
-        callbackId,
-        args
+        callbackId: e,
+        args: n
       },
-      getCallbackRoutingId(callbackId) ?? void 0
+      w(e) ?? void 0
     );
   }
-  callbackFinalizationRegistry.register(remoteCallbackInvoker, callbackId);
-  return remoteCallbackInvoker;
+  return O.register(t, e), t;
 }
-const callbackSerializer = {
-  isApplicable: (value) => typeof value === "function",
-  serialize: (callback) => registerCallback(callback),
-  deserialize: deserializeCallbackId
-};
-const bridgeSerializer = new SuperJSON();
-bridgeSerializer.registerCustom(callbackSerializer, "superbridge-callback");
-bridgeSerializer.registerCustom(
-  abortSignalSerializer,
+const L = {
+  isApplicable: (e) => typeof e == "function",
+  serialize: (e) => j$1(e),
+  deserialize: F$1
+}, y = new SuperJSON();
+y.registerCustom(L, "superbridge-callback");
+y.registerCustom(
+  v,
   "superbridge-abortSignal"
 );
-function createControlledPromise() {
-  let controller;
-  const promise = new Promise((_resolve, _reject) => {
-    controller = {
-      resolve: _resolve,
-      reject: _reject
+const B$1 = f$1(
+  "$execute"
+), J = f$1("$reset");
+function P$1(e) {
+  return (e == null ? void 0 : e.constructor) === Object;
+}
+function x(e, t) {
+  return e ? `${e}.${t}` : t;
+}
+function C(e, t, n) {
+  for (const [o, c] of Object.entries(n)) {
+    const i = x(e, o);
+    P$1(c) ? C(i, t, c) : t.set(i, c);
+  }
+}
+function K(e) {
+  const t = /* @__PURE__ */ new Map();
+  return C("", t, e), t;
+}
+
+function n(e) {
+  return `SUPERBRIDGE__${e}`;
+}
+
+var S = Object.defineProperty;
+var q = (t, e, n) => e in t ? S(t, e, { enumerable: true, configurable: true, writable: true, value: n }) : t[e] = n;
+var o = (t, e, n) => q(t, typeof e != "symbol" ? e + "" : e, n);
+function P() {
+  let t;
+  return [new Promise((n, r) => {
+    t = {
+      resolve: n,
+      reject: r
     };
-  });
-  return [promise, controller];
+  }), t];
 }
-function getIPCChannelName(name) {
-  return `SUPERBRIDGE__${name}`;
-}
-const log$1 = createLogger("superbridge/main/init");
-const pendingRequests = /* @__PURE__ */ new Map();
+const m = c("superbridge/main/init"), d = /* @__PURE__ */ new Map();
 electron.ipcMain.handle(
-  getIPCChannelName("HANDLE_RESULT"),
-  (_event, payload) => {
-    const result = bridgeSerializer.deserialize(
-      payload.payload
-    );
-    const pendingRequestController = pendingRequests.get(result.requestId);
-    if (!pendingRequestController) {
-      throw new Error(`No controller found for requestId: ${result.requestId}`);
-    }
-    pendingRequests.delete(result.requestId);
-    if (result.type === "success") {
-      pendingRequestController.resolve(result.result);
-    } else {
-      pendingRequestController.reject(result.error);
-    }
+  n("HANDLE_RESULT"),
+  (t, e) => {
+    const n = y.deserialize(
+      e.payload
+    ), r = d.get(n.requestId);
+    if (!r)
+      throw new Error(`No controller found for requestId: ${n.requestId}`);
+    d.delete(n.requestId), n.type === "success" ? r.resolve(n.result) : r.reject(n.error);
   }
 );
-initializeSuperbridge({
-  send(message, payload, webId) {
-    if (webId === void 0) {
+b$2({
+  send(t, e, n$1) {
+    if (n$1 === void 0)
       throw new Error("webId is required");
-    }
-    const requestId = generateId();
-    const targetWebContents = electron.webContents.fromId(webId);
-    if (!targetWebContents) {
-      throw new Error(`Target webContents not found for id: ${webId}`);
-    }
-    log$1.debug(`Send "${message.type}" with payload`, payload);
-    const [promise, controller] = createControlledPromise();
-    pendingRequests.set(requestId, controller);
-    targetWebContents.send(getIPCChannelName(message.type), {
-      requestId,
-      payload: bridgeSerializer.serialize(payload)
-    });
-    return promise;
+    const r = p$1(), i = electron.webContents.fromId(n$1);
+    if (!i)
+      throw new Error(`Target webContents not found for id: ${n$1}`);
+    m.debug(`Send "${t.type}" with payload`, e);
+    const [c, E] = P();
+    return d.set(r, E), i.send(n(t.type), {
+      requestId: r,
+      payload: y.serialize(e)
+    }), c;
   },
-  handle(message, handler) {
-    async function handleMessage(_event, payload) {
-      log$1.debug(`Handling "${message.type}" with payload`, payload);
-      const result = await handler(
-        bridgeSerializer.deserialize(payload.payload)
+  handle(t, e) {
+    async function n$1(r, i) {
+      m.debug(`Handling "${t.type}" with payload`, i);
+      const c = await e(
+        y.deserialize(i.payload)
       );
-      return bridgeSerializer.serialize(result);
+      return y.serialize(c);
     }
-    electron.ipcMain.handle(getIPCChannelName(message.type), handleMessage);
-    return () => {
-      electron.ipcMain.removeHandler(getIPCChannelName(message.type));
+    return electron.ipcMain.handle(n(t.type), n$1), () => {
+      electron.ipcMain.removeHandler(n(t.type));
     };
   }
 });
-const $execute = defineBridgeMessage(
-  "$execute"
-);
-const $reset = defineBridgeMessage("$reset");
-const log = createLogger("superbridge/main/init");
-function initializeSuperbridgeMain(handler) {
-  log.debug("Initialize Superbridge Main");
-  process.env.SUPERBRIDGE_SCHEMA = JSON.stringify(handler.schema);
-  bridge.handle($execute, async (payload) => {
-    log.debug(`Handling execute "${payload.path}" with args`, payload.args);
-    return handler.execute(payload.path, payload.args);
-  });
-  bridge.handle($reset, async () => {
-    log.debug("Handling reset");
-    await handler.reset();
+const u = c("superbridge/main/init");
+function T(t) {
+  u.debug("Initialize Superbridge Main"), process.env.SUPERBRIDGE_SCHEMA = JSON.stringify(t.schema), d$2.handle(B$1, async (e) => (u.debug(`Handling execute "${e.path}" with args`, e.args), t.execute(e.path, e.args))), d$2.handle(J, async () => {
+    u.debug("Handling reset"), await t.reset();
   });
 }
-const QUERY_SYMBOL = Symbol("query");
-function getIsQuery(value) {
-  return typeof value === "function" && QUERY_SYMBOL in value && value[QUERY_SYMBOL] === "query";
+const l = Symbol("query");
+function B(t) {
+  return typeof t == "function" && l in t && t[l] === "query";
 }
-function query(handler) {
-  const queryFunction = async (...args) => {
-    return handler(...args);
-  };
-  queryFunction[QUERY_SYMBOL] = "query";
-  return queryFunction;
+function U(t) {
+  const e = async (...n) => t(...n);
+  return e[l] = "query", e;
 }
-const EFFECT_SYMBOL = Symbol("effect");
-function getIsEffect(value) {
-  return typeof value === "function" && EFFECT_SYMBOL in value && value[EFFECT_SYMBOL] === "effect";
+const g = Symbol("effect");
+function M(t) {
+  return typeof t == "function" && g in t && t[g] === "effect";
 }
-function effect(handler) {
-  const effectFunction = async (...args) => {
-    return handler(...args);
-  };
-  effectFunction[EFFECT_SYMBOL] = "effect";
-  return effectFunction;
+function Y(t) {
+  const e = async (...n) => t(...n);
+  return e[g] = "effect", e;
 }
-const MUTATION_SYMBOL = Symbol("mutation");
-function getIsMutation(value) {
-  return typeof value === "function" && MUTATION_SYMBOL in value && value[MUTATION_SYMBOL] === "mutation";
+const p = Symbol("mutation");
+function b(t) {
+  return typeof t == "function" && p in t && t[p] === "mutation";
 }
-function mutation(handler) {
-  const mutationFunction = async (...args) => {
-    return handler(...args);
-  };
-  mutationFunction[MUTATION_SYMBOL] = "mutation";
-  return mutationFunction;
+function j(t) {
+  const e = async (...n) => t(...n);
+  return e[p] = "mutation", e;
 }
-function getIsPlainObject(value) {
-  return (value == null ? void 0 : value.constructor) === Object;
-}
-function getPath(currentPath, key) {
-  if (!currentPath) return key;
-  return `${currentPath}.${key}`;
-}
-function buildPropertiesMap(currentPath, result, input) {
-  for (const [key, value] of Object.entries(input)) {
-    const path = getPath(currentPath, key);
-    if (getIsPlainObject(value)) {
-      buildPropertiesMap(path, result, value);
-    } else {
-      result.set(path, value);
-    }
-  }
-}
-function createNestedRecordPropertiesMap(input) {
-  const map = /* @__PURE__ */ new Map();
-  buildPropertiesMap("", map, input);
-  return map;
-}
-function getBridgeHandlerSchema(input) {
-  const map = createNestedRecordPropertiesMap(input);
-  const schema = {};
-  for (const [key, value] of map.entries()) {
-    if (getIsQuery(value)) {
-      schema[key] = {
+function F(t) {
+  const e = K(t), n = {};
+  for (const [r, i] of e.entries()) {
+    if (B(i)) {
+      n[r] = {
         type: "query"
       };
       continue;
     }
-    if (getIsMutation(value)) {
-      schema[key] = {
+    if (b(i)) {
+      n[r] = {
         type: "mutation"
       };
       continue;
     }
-    if (getIsEffect(value)) {
-      schema[key] = {
+    if (M(i)) {
+      n[r] = {
         type: "effect"
       };
       continue;
     }
-    if (typeof value === "function") {
-      schema[key] = {
+    if (typeof i == "function") {
+      n[r] = {
         type: "query"
       };
       continue;
     }
-    console.warn(`Unknown field type: ${key}`, value);
+    console.warn(`Unknown field type: ${r}`, i);
   }
-  return schema;
+  return n;
 }
-createLogger("superbridge/main/BridgeHandler");
-class BridgeHandler {
-  constructor(input) {
-    __publicField(this, "handlersMap", /* @__PURE__ */ new Map());
-    __publicField(this, "schema");
-    __publicField(this, "pendingMutations", /* @__PURE__ */ new Set());
-    __publicField(this, "runningEffects", /* @__PURE__ */ new Set());
-    this.input = input;
-    this.handlersMap = createNestedRecordPropertiesMap(input);
-    this.schema = getBridgeHandlerSchema(input);
+c("superbridge/main/BridgeHandler");
+class R {
+  constructor(e) {
+    o(this, "handlersMap", /* @__PURE__ */ new Map());
+    o(this, "schema");
+    o(this, "pendingMutations", /* @__PURE__ */ new Set());
+    o(this, "runningEffects", /* @__PURE__ */ new Set());
+    this.input = e, this.handlersMap = K(e), this.schema = F(e);
   }
   async waitForPendingMutations() {
-    while (this.pendingMutations.size) {
-      const promises = [...this.pendingMutations];
-      for (const promise of promises) {
+    for (; this.pendingMutations.size; ) {
+      const e = [...this.pendingMutations];
+      for (const n of e)
         try {
-          await promise;
+          await n;
         } catch {
         }
-      }
     }
   }
-  addPendingMutation(promise) {
-    this.pendingMutations.add(promise);
-    promise.finally(() => {
-      this.pendingMutations.delete(promise);
+  addPendingMutation(e) {
+    this.pendingMutations.add(e), e.finally(() => {
+      this.pendingMutations.delete(e);
     });
   }
-  getHandler(path) {
-    const handler = this.handlersMap.get(path);
-    if (!handler) {
-      throw new Error(`Handler not found for path: ${path}`);
-    }
-    return handler;
+  getHandler(e) {
+    const n = this.handlersMap.get(e);
+    if (!n)
+      throw new Error(`Handler not found for path: ${e}`);
+    return n;
   }
-  async execute(path, args) {
-    const handler = this.getHandler(path);
-    if (getIsMutation(handler)) {
-      const promise = handler(...args);
-      this.addPendingMutation(promise);
-      return promise;
+  async execute(e, n) {
+    const r = this.getHandler(e);
+    if (b(r)) {
+      const i = r(...n);
+      return this.addPendingMutation(i), i;
     }
-    if (getIsEffect(handler)) {
-      const cleanup = handler(...args);
-      this.runningEffects.add(cleanup);
-      return cleanup;
+    if (M(r)) {
+      const i = r(...n);
+      return this.runningEffects.add(i), i;
     }
-    return handler(...args);
+    return r(...n);
   }
   async cleanAllEffects() {
-    const effects = [...this.runningEffects];
-    for (const effect2 of effects) {
+    const e = [...this.runningEffects];
+    for (const n of e)
       try {
-        const cleanup = await effect2;
-        if (typeof cleanup === "function") {
-          cleanup();
-        }
+        const r = await n;
+        typeof r == "function" && r();
       } catch {
       }
-    }
     this.runningEffects.clear();
   }
   async reset() {
-    await this.cleanAllEffects();
-    await this.waitForPendingMutations();
+    await this.cleanAllEffects(), await this.waitForPendingMutations();
   }
 }
-function createBridgeHandler(input) {
-  return new BridgeHandler(input);
+function k(t) {
+  return new R(t);
 }
 
 let foo = "foo";
-const bridgeHandler = createBridgeHandler({
-  ping: query(async (date, onProgress) => {
+const bridgeHandler = k({
+  ping: U(async (date, onProgress) => {
     for (let i = 0; i < 10; i++) {
       onProgress?.(i);
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     return `pong ${date.toISOString()}`;
   }),
-  pings: effect(
+  pings: Y(
     (interval, callback) => {
       console.log("setting interval");
       function main(main2) {
@@ -1453,11 +1282,11 @@ const bridgeHandler = createBridgeHandler({
     }
   ),
   foo: {
-    change: mutation(async (message) => {
+    change: j(async (message) => {
       await new Promise((resolve) => setTimeout(resolve, 1e3));
       foo = message;
     }),
-    get: query(async () => {
+    get: U(async () => {
       return foo;
     })
   }
@@ -1470,7 +1299,7 @@ process.env.SUPERBRIDGE_DEBUG = "true";
 let win = null;
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
 function createWindow() {
-  initializeSuperbridgeMain(bridgeHandler);
+  T(bridgeHandler);
   win = new electron.BrowserWindow({
     width: 1200,
     height: 800,
@@ -1481,7 +1310,7 @@ function createWindow() {
     }
   });
   win.webContents.on("did-finish-load", async () => {
-    const body = await bridge$1.send($getBody, void 0, win?.webContents.id);
+    const body = await bridge.send($getBody, void 0, win?.webContents.id);
     console.log("body", body);
   });
   if (VITE_DEV_SERVER_URL) {

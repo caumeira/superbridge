@@ -5,34 +5,34 @@
   "exports": {
     "./preload": {
       "types": "./dist/preload/index.d.ts",
-      "import": "./dist/preload/index.js",
-      "require": "./dist/preload/index.cjs"
+      "import": "./dist/preload.js",
+      "require": "./dist/preload.cjs"
     },
     "./main": {
       "types": "./dist/main/index.d.ts",
-      "import": "./dist/main/index.js",
-      "require": "./dist/main/index.cjs"
+      "import": "./dist/main.js",
+      "require": "./dist/main.cjs"
     },
     "./client": {
       "types": "./dist/client/index.d.ts",
-      "import": "./dist/client/index.js",
-      "require": "./dist/client/index.cjs"
+      "import": "./dist/client.js",
+      "require": "./dist/client.cjs"
     },
     ".": {
       "types": "./dist/shared/index.d.ts",
-      "import": "./dist/shared/index.js",
-      "require": "./dist/shared/index.cjs"
+      "import": "./dist/shared.js",
+      "require": "./dist/shared.cjs"
     }
   },
-  "main": "./dist/shared/index.cjs",
-  "module": "./dist/shared/index.js",
-  "types": "./dist/shared/index.d.ts",
+  "main": "./dist/shared.cjs",
+  "module": "./dist/shared.js",
+  "types": "./dist/shared.d.ts",
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "node  --loader ts-node/esm ./vite/build.ts",
-    "dev": "node  --loader ts-node/esm ./vite/dev.ts",
+    "build": "vite build",
+    "dev": "vite dev",
     "typecheck": "tsc --noEmit",
     "ts:types": "tsc --watch --project tsconfig.json"
   },

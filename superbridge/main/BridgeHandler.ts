@@ -15,6 +15,7 @@ export type BridgeNestedObject<LeafType> = {
 
 type Cleanup = () => void;
 
+//
 export type BridgeSingleHandler =
   | Query<any[], any>
   | Mutation<any[], any>

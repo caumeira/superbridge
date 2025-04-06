@@ -2,72 +2,61 @@
 
 const electron = require('electron');
 
-function getIPCChannelName(name) {
-  return `SUPERBRIDGE__${name}`;
+function n(e) {
+  return `SUPERBRIDGE__${e}`;
 }
-function createLogger(name) {
-  const LOG_COLOR = "#808080";
-  const LOG_STYLE = `color: ${LOG_COLOR};`;
-  const LABEL = `%c🌉 ${name}:%c`;
-  const log2 = (...args) => {
-    console.info(LABEL, LOG_STYLE, "", ...args);
+
+function c$1(s) {
+  const e = "color: #808080;", n = `%c🌉 ${s}:%c`, r = (...o) => {
+    console.info(n, e, "", ...o);
   };
-  log2.debug = (...args) => {
-    console.debug(LABEL, LOG_STYLE, "", ...args);
-  };
-  log2.warn = (...args) => {
-    console.warn(LABEL, LOG_STYLE, "", ...args);
-  };
-  log2.error = (...args) => {
-    console.error(LABEL, LOG_STYLE, "", ...args);
-  };
-  log2.rename = (name2) => {
-    return createLogger(name2);
-  };
-  return log2;
+  return r.debug = (...o) => {
+    console.debug(n, e, "", ...o);
+  }, r.warn = (...o) => {
+    console.warn(n, e, "", ...o);
+  }, r.error = (...o) => {
+    console.error(n, e, "", ...o);
+  }, r.rename = (o) => c$1(o), r;
 }
-createLogger("superbridge");
-const log = createLogger("superbridge/preload");
-if (!process.env.SUPERBRIDGE_SCHEMA) {
+c$1("superbridge");
+
+const a = c$1("superbridge/preload");
+if (!process.env.SUPERBRIDGE_SCHEMA)
   throw new Error(
     "Superbridge is not initialized. Make sure to call initializeSuperbridgeMain() in your main process before creating BrowserWindow."
   );
-}
-const schema = JSON.parse(
+const c = JSON.parse(
   process.env.SUPERBRIDGE_SCHEMA
 );
-function createSuperbridgeInterface() {
+function f() {
   return {
-    send: async (type, payload) => {
-      if (!type) throw new Error("Type is required");
-      log.debug(`Sending "${type}" with payload`, payload);
-      return electron.ipcRenderer.invoke(getIPCChannelName(type), payload);
+    send: async (e, r) => {
+      if (!e) throw new Error("Type is required");
+      return a.debug(`Sending "${e}" with payload`, r), electron.ipcRenderer.invoke(n(e), r);
     },
-    handle: (type, handler) => {
-      if (!type) throw new Error("Type is required");
-      function handleMessage(_event, payload) {
-        log.debug(`Handling "${type}" with payload`, payload);
-        handler(payload, _event);
+    handle: (e, r) => {
+      if (!e) throw new Error("Type is required");
+      function o(s, t) {
+        a.debug(`Handling "${e}" with payload`, t), r(t, s);
       }
-      electron.ipcRenderer.on(getIPCChannelName(type), handleMessage);
-      return () => {
-        electron.ipcRenderer.off(getIPCChannelName(type), handleMessage);
+      return electron.ipcRenderer.on(n(e), o), () => {
+        electron.ipcRenderer.off(n(e), o);
       };
     },
     get schema() {
-      return schema;
+      return c;
     },
     get routingId() {
       return electron.webFrame.routingId;
     }
   };
 }
-function initializeSuperbridgePreload() {
+function w() {
   electron.contextBridge.exposeInMainWorld(
     "$superbridgeinterface",
-    createSuperbridgeInterface()
+    f()
   );
 }
 
-initializeSuperbridgePreload();
+w();
 //# sourceMappingURL=preload.js.map
