@@ -6,7 +6,7 @@ import { bridgeSerializer } from "../shared/serializer";
 import { generateId } from "../utils/id";
 import { initializeSuperbridge } from "../shared/superbridge";
 
-const $superbridgelink = window.$superbridgelink;
+const { $superbridgeinterface } = window;
 
 initializeSuperbridge({
   async send<I, O>(
@@ -23,7 +23,7 @@ initializeSuperbridge({
 
     const requestId = generateId();
 
-    const result = await $superbridgelink.send(message.type, {
+    const result = await $superbridgeinterface.send(message.type, {
       requestId,
       payload: bridgeSerializer.serialize(payload),
     });
@@ -34,7 +34,7 @@ initializeSuperbridge({
     message: BridgeMessageType<I, O>,
     handler: (payload: I) => Promise<O>
   ) {
-    return $superbridgelink.handle(
+    return $superbridgeinterface.handle(
       message.type,
       async ({ requestId, payload }) => {
         try {
@@ -42,7 +42,7 @@ initializeSuperbridge({
             bridgeSerializer.deserialize(payload) as I
           );
 
-          await $superbridgelink.send("HANDLE_RESULT", {
+          await $superbridgeinterface.send("HANDLE_RESULT", {
             requestId,
             payload: bridgeSerializer.serialize({
               requestId,
@@ -51,7 +51,7 @@ initializeSuperbridge({
             } as HandleResult<O>),
           });
         } catch (error) {
-          await $superbridgelink.send("HANDLE_RESULT", {
+          await $superbridgeinterface.send("HANDLE_RESULT", {
             requestId,
             payload: bridgeSerializer.serialize({
               requestId,

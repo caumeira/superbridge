@@ -39,15 +39,11 @@ bridge.handle($triggerRemoteCallback, async ({ callbackId, args }) => {
   return await callback(...args);
 });
 
-setInterval(() => {
-  console.log("callbacks", callbacks.size);
-}, 1000);
-
 function getCallbackId() {
   let id = `$$callback-${generateId()}`;
 
   if (typeof window !== "undefined") {
-    id = `${id}-${window.$superbridgelink.routingId}`;
+    id = `${id}-${window.$superbridgeinterface.routingId}`;
   }
 
   return id;

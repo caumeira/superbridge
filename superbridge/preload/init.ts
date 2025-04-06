@@ -73,13 +73,13 @@ export type SuperBridgeInterface = ReturnType<
 
 export function initializeSuperbridgePreload() {
   contextBridge.exposeInMainWorld(
-    "$superbridgelink",
+    "$superbridgeinterface",
     createSuperbridgeInterface()
   );
 }
 
 declare global {
   interface Window {
-    $superbridgelink: SuperBridgeInterface;
+    $superbridgeinterface: SuperBridgeInterface;
   }
 }

@@ -7,5 +7,6 @@ export { mutation, getIsMutation } from "./mutation";
 export {
   type BridgeHandler,
   type BridgeHandlerInput,
+  type BridgeHandlerMap,
   createBridgeHandler,
 } from "./BridgeHandler";

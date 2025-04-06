@@ -18,9 +18,11 @@ type Cleanup = () => void;
 type QueryClient<Args extends any[], Result> = (
   ...args: Args
 ) => Promise<Awaited<Result>>;
+
 type MutationClient<Args extends any[], Result> = (
   ...args: Args
 ) => Promise<Awaited<Result>>;
+
 type EffectClient<Args extends any[]> = (...args: Args) => Cleanup;
 
 type SuperbridgeClientValue<T> = T extends Query<infer Args, infer Result>
@@ -95,7 +97,7 @@ export function createSuperbridgeClient<
 >(): SuperbridgeClient<T["input"]> {
   resetPromise = bridge.send($reset, undefined);
 
-  const schema = window.$superbridgelink.schema;
+  const schema = window.$superbridgeinterface.schema;
 
   if (!schema) {
     throw new Error("Schema is not initialized");

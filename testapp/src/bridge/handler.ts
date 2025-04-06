@@ -18,7 +18,7 @@ export const bridgeHandler = createBridgeHandler({
     ) => {
       console.log("setting interval");
       function main(main: string) {
-        console.log("main", main);
+        console.log("mainaaaa", main);
       }
 
       const intervalId = setInterval(() => {

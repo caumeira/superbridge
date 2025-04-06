@@ -1,3 +1,3 @@
 import { defineBridgeMessage } from "superbridge";
 
-export const $getBodyId = defineBridgeMessage<void, string>("$getBodyId");
+export const $getBody = defineBridgeMessage<void, string>("$getBodyId");

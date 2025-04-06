@@ -22,8 +22,11 @@ export type BridgeSingleHandler =
 
 export type BridgeHandlerInput = BridgeNestedObject<BridgeSingleHandler>;
 
+// Define the handlersMap type separately to ensure it's preserved in declarations
+export type BridgeHandlerMap = Map<string, BridgeSingleHandler>;
+
 export class BridgeHandler<T extends BridgeHandlerInput> {
-  private handlersMap: Map<string, BridgeSingleHandler>;
+  private handlersMap: BridgeHandlerMap = new Map();
   public readonly schema: BridgeHandlerSchema;
 
   constructor(public readonly input: T) {
@@ -55,77 +58,57 @@ export class BridgeHandler<T extends BridgeHandlerInput> {
     });
   }
 
-  private getHandler(path: string) {
+  private getHandler(path: string): BridgeSingleHandler {
     const handler = this.handlersMap.get(path);
 
     if (!handler) {
-      throw new Error(`Handler for path ${path} not found`);
+      throw new Error(`Handler not found for path: ${path}`);
     }
 
     return handler;
   }
 
-  async execute(path: string, args: unknown[]) {
-    log.debug(`Execute "${path}" with args`, args);
-
+  async execute(path: string, args: unknown[]): Promise<unknown> {
     const handler = this.getHandler(path);
 
-    if (!handler) {
-      throw new Error(`Handler for path ${path} not found`);
-    }
-
-    await this.waitForPendingMutations();
-
     if (getIsMutation(handler)) {
-      const resultPromise = handler(...args);
+      const promise = handler(...args);
 
-      this.addPendingMutation(resultPromise);
+      this.addPendingMutation(promise);
 
-      return resultPromise;
+      return promise;
     }
 
     if (getIsEffect(handler)) {
-      const cleanupPromise = handler(...args);
+      const cleanup = handler(...args);
 
-      this.runningEffects.add(cleanupPromise);
+      this.runningEffects.add(cleanup);
 
-      return async () => {
-        this.runningEffects.delete(cleanupPromise);
-
-        const cleanup = await cleanupPromise;
-
-        try {
-          cleanup();
-        } catch {
-          console.error("Error cleaning up effect");
-        }
-      };
+      return cleanup;
     }
 
     return handler(...args);
   }
 
-  async cleanAllEffects() {
-    const cleanupPromises = [...this.runningEffects];
+  async cleanAllEffects(): Promise<void> {
+    const effects = [...this.runningEffects];
+
+    for (const effect of effects) {
+      try {
+        const cleanup = await effect;
+
+        if (typeof cleanup === "function") {
+          cleanup();
+        }
+      } catch {}
+    }
 
     this.runningEffects.clear();
-
-    for (const cleanupPromise of cleanupPromises) {
-      const cleanup = await cleanupPromise;
-
-      try {
-        cleanup();
-      } catch {
-        console.error("Error cleaning up effect", cleanupPromise);
-      }
-    }
   }
 
-  async reset() {
-    log.debug("Reset");
+  async reset(): Promise<void> {
     await this.cleanAllEffects();
-
-    this.pendingMutations.clear();
+    await this.waitForPendingMutations();
   }
 }
 

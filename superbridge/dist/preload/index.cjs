@@ -1,5 +1,5 @@
-'use strict';
-
+"use strict";
+Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 function getAugmentedNamespace(n) {
   if (n.__esModule) return n;
   var f = n.default;
@@ -51,7 +51,6 @@ var electron = getElectronPath();
 function getIPCChannelName(name) {
   return `SUPERBRIDGE__${name}`;
 }
-
 function createLogger(name) {
   const LOG_COLOR = "#808080";
   const LOG_STYLE = `color: ${LOG_COLOR};`;
@@ -74,7 +73,6 @@ function createLogger(name) {
   return log2;
 }
 createLogger("superbridge");
-
 const log = createLogger("superbridge/preload");
 if (!process.env.SUPERBRIDGE_SCHEMA) {
   throw new Error(
@@ -116,6 +114,5 @@ function initializeSuperbridgePreload() {
     createSuperbridgeInterface()
   );
 }
-
-initializeSuperbridgePreload();
-//# sourceMappingURL=preload.js.map
+exports.initializeSuperbridgePreload = initializeSuperbridgePreload;
+//# sourceMappingURL=index.cjs.map

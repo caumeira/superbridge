@@ -1,6 +1,6 @@
 import { BrowserWindow, app } from "electron";
 
-import { $getBodyId } from "../bridge/message";
+import { $getBody } from "../bridge/message";
 import { bridge } from "../../../superbridge/shared/superbridge";
 import { bridgeHandler } from "../bridge/handler";
 import { initializeSuperbridgeMain } from "superbridge/main";
@@ -42,15 +42,10 @@ function createWindow() {
     },
   });
 
-  setTimeout(() => {
-    bridge.send($getBodyId, undefined, win?.webContents.id).then((id) => {
-      console.log("id", id);
-    });
-  }, 2000);
-
   // Test active push message to Renderer-process.
-  win.webContents.on("did-finish-load", () => {
-    win?.webContents.send("main-process-message", new Date().toLocaleString());
+  win.webContents.on("did-finish-load", async () => {
+    const body = await bridge.send($getBody, undefined, win?.webContents.id);
+    console.log("body", body);
   });
 
   if (VITE_DEV_SERVER_URL) {
