@@ -1,8 +1,13 @@
 {
   "name": "superbridge",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "license": "MIT",
+  "homepage": "https://superbridge.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pie6k/superbridge.git"
+  },
   "exports": {
     "./preload": {
       "types": "./dist/preload/index.d.ts",
