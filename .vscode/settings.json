@@ -11,5 +11,7 @@
       "when": "$(basename).ts"
     },
     "**/*.js.map": true
-  }
+  },
+  "spellright.language": ["en"],
+  "spellright.documentTypes": ["latex", "plaintext"]
 }
