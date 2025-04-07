@@ -1,6 +1,7 @@
 {
   "name": "superbridge",
   "version": "1.0.2",
+  "description": "A powerful, type-safe, and easy-to-use Electron bridge with support for sending callback functions over the bridge",
   "type": "module",
   "license": "MIT",
   "homepage": "https://superbridge.dev",
@@ -8,6 +9,15 @@
     "type": "git",
     "url": "https://github.com/pie6k/superbridge.git"
   },
+  "keywords": [
+    "electron",
+    "ipc",
+    "bridge",
+    "typescript",
+    "type-safe",
+    "callback",
+    "communication"
+  ],
   "exports": {
     "./preload": {
       "types": "./dist/preload/index.d.ts",
