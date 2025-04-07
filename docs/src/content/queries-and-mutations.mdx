@@ -1,0 +1,34 @@
+# Queries and Mutations
+
+Let's say we want to expose another function that will mutate the app state.
+
+```ts filename="router.ts" {3, 6-13}
+import { createRouter, mutation } from "superbridge/main";
+
+let counter = 0;
+
+export const appRouter = createRouter({
+  getCounter() {
+    return counter;
+  },
+  increment: mutation(async (by: number) => {
+    // Let's say the mutation will take some time to complete
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    counter += by;
+  }),
+});
+```
+
+Operations that mutate the app state are marked as mutations.
+
+If some mutations are running, all new queries will first wait for all pending mutations to finish in order to avoid queries returning stale data, especially if the mutation takes some time to complete.
+
+In terms of the client API, queries and mutations look and behave the same.
+
+```ts filename="example.ts"
+const counter = await appClient.getCounter();
+console.log(counter); // 0
+await appClient.increment(1);
+const counter2 = await appClient.getCounter();
+console.log(counter2); // 1
+```

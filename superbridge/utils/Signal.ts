@@ -6,7 +6,7 @@ const NO_VALUE = Symbol("NO_VALUE");
 
 export class Signal<T> {
   private listeners = new Map<Symbol, Listener<T>>();
-  private lastValue: T | typeof NO_VALUE = NO_VALUE;
+  lastValue: T | typeof NO_VALUE = NO_VALUE;
 
   assertLastValue(error: Error | string) {
     if (this.lastValue === NO_VALUE) {

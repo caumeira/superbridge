@@ -9,6 +9,7 @@ import { type BridgeHandlerSchema } from "../main/schema";
 import { getIPCChannelName } from "../shared/channel";
 import { createLogger } from "../shared/log";
 import { RawBridgeData } from "../shared/types";
+import SuperJSON from "superjson";
 
 const log = createLogger("superbridge/preload");
 
@@ -25,7 +26,7 @@ if (!process.env.SUPERBRIDGE_SCHEMA) {
   );
 }
 
-const schema = JSON.parse(
+const schema = SuperJSON.parse(
   process.env.SUPERBRIDGE_SCHEMA
 ) as BridgeHandlerSchema;
 

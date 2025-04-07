@@ -1,21 +1,36 @@
-import { BridgeHandlerInput } from "./BridgeHandler";
+import { RouterInput } from "./BridgeHandler";
 import { createNestedRecordPropertiesMap } from "../utils/nestedRecord";
 import { getIsEffect } from "./effect";
 import { getIsMutation } from "./mutation";
 import { getIsQuery } from "./query";
+import { getIsSharedValue } from "./sharedValue";
 
-export type BridgeFieldSchema = {
-  type: "query" | "mutation" | "effect";
-};
+export type BridgeFieldSchema =
+  | {
+      type: "query" | "mutation" | "effect";
+    }
+  | {
+      type: "sharedValue";
+      initialValue: any;
+    };
 
 export type BridgeHandlerSchema = Record<string, BridgeFieldSchema>;
 
-export function getBridgeHandlerSchema(input: BridgeHandlerInput) {
+export function getBridgeHandlerSchema(input: RouterInput) {
   const map = createNestedRecordPropertiesMap(input);
 
   const schema: BridgeHandlerSchema = {};
 
   for (const [key, value] of map.entries()) {
+    console.log("key", key, value);
+    if (getIsSharedValue(value)) {
+      schema[key] = {
+        type: "sharedValue",
+        initialValue: value.initialValue,
+      };
+      continue;
+    }
+
     if (getIsQuery(value)) {
       schema[key] = {
         type: "query",

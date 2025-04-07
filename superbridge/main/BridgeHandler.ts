@@ -1,9 +1,11 @@
 import { BridgeHandlerSchema, getBridgeHandlerSchema } from "./schema";
 import { Effect, getIsEffect } from "./effect";
 import { Mutation, getIsMutation } from "./mutation";
+import { Query, getIsQuery } from "./query";
+import { SharedValue, getIsSharedValue } from "./sharedValue";
 
 import { MaybePromise } from "../shared/types";
-import { Query } from "./query";
+import { Signal } from "../utils/Signal";
 import { createLogger } from "../shared/log";
 import { createNestedRecordPropertiesMap } from "../utils/nestedRecord";
 
@@ -14,25 +16,32 @@ export type BridgeNestedObject<LeafType> = {
 };
 
 type Cleanup = () => void;
-
+type AnyFunction = (...args: any[]) => any;
 //
-export type BridgeSingleHandler =
-  | Query<any[], any>
-  | Mutation<any[], any>
-  | Effect<any[]>;
+export type RouterSingleHandler =
+  | Query<AnyFunction>
+  | Mutation<AnyFunction>
+  | Effect<any[]>
+  | SharedValue<any>;
 
-export type BridgeHandlerInput = BridgeNestedObject<BridgeSingleHandler>;
+export type RouterInput = BridgeNestedObject<RouterSingleHandler>;
 
 // Define the handlersMap type separately to ensure it's preserved in declarations
-export type BridgeHandlerMap = Map<string, BridgeSingleHandler>;
+export type RouterHandlersMap = Map<string, RouterSingleHandler>;
 
-export class BridgeHandler<T extends BridgeHandlerInput> {
-  private handlersMap: BridgeHandlerMap = new Map();
+interface SharedValueState<T> {
+  value: T;
+  initialValue: T;
+  updates: Signal<T>;
+}
+
+export class Router<T extends RouterInput> {
+  private handlersMap: RouterHandlersMap = new Map();
   public readonly schema: BridgeHandlerSchema;
 
   constructor(public readonly input: T) {
     this.handlersMap =
-      createNestedRecordPropertiesMap<BridgeSingleHandler>(input);
+      createNestedRecordPropertiesMap<RouterSingleHandler>(input);
     this.schema = getBridgeHandlerSchema(input);
   }
 
@@ -59,7 +68,7 @@ export class BridgeHandler<T extends BridgeHandlerInput> {
     });
   }
 
-  private getHandler(path: string): BridgeSingleHandler {
+  private getHandler(path: string): RouterSingleHandler {
     const handler = this.handlersMap.get(path);
 
     if (!handler) {
@@ -71,6 +80,10 @@ export class BridgeHandler<T extends BridgeHandlerInput> {
 
   async execute(path: string, args: unknown[]): Promise<unknown> {
     const handler = this.getHandler(path);
+
+    if (getIsSharedValue(handler)) {
+      throw new Error("Shared values are not supported in execute");
+    }
 
     if (getIsMutation(handler)) {
       const promise = handler(...args);
@@ -88,7 +101,41 @@ export class BridgeHandler<T extends BridgeHandlerInput> {
       return cleanup;
     }
 
-    return handler(...args);
+    if (getIsQuery(handler)) {
+      return handler(...args);
+    }
+
+    throw new Error(`Unknown handler type: ${handler}`);
+  }
+
+  getSharedValue(path: string) {
+    const handler = this.getHandler(path);
+
+    if (!getIsSharedValue(handler)) {
+      throw new Error("Shared values are not supported in getSharedValue");
+    }
+
+    return handler.getValue();
+  }
+
+  setSharedValue(path: string, value: unknown) {
+    const handler = this.getHandler(path);
+
+    if (!getIsSharedValue(handler)) {
+      throw new Error("Shared values are not supported in setSharedValue");
+    }
+
+    handler.setValue(value);
+  }
+
+  watchSharedValue(path: string, callback: (value: unknown) => void) {
+    const handler = this.getHandler(path);
+
+    if (!getIsSharedValue(handler)) {
+      throw new Error("Shared values are not supported in watchSharedValue");
+    }
+
+    return handler.watch(callback);
   }
 
   async cleanAllEffects(): Promise<void> {
@@ -113,8 +160,6 @@ export class BridgeHandler<T extends BridgeHandlerInput> {
   }
 }
 
-export function createBridgeHandler<T extends BridgeHandlerInput>(
-  input: T
-): BridgeHandler<T> {
-  return new BridgeHandler(input);
+export function createRouter<T extends RouterInput>(input: T): Router<T> {
+  return new Router(input);
 }

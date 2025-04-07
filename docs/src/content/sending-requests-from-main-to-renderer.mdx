@@ -1,0 +1,79 @@
+import { Steps } from 'nextra/components'
+
+# Sending requests from main to renderer
+
+Sometimes we might want to send an explicit request from main to renderer, either to instruct the renderer to do something or to retrieve some data from the renderer.
+
+Let's say we want the main process to be able to get the HTML of the current page and to toggle a class on the body element.
+
+In order to do that, we will need to define two message types and then define their handlers.
+
+```ts filename="message-types.ts"
+import { defineBridgeMessage } from "superbridge";
+
+/**
+ * $toggleBodyClass takes a class name and returns a boolean value indicating 
+ * whether the class is currently on the body element.
+ */
+export const $toggleBodyClass = defineBridgeMessage<string, boolean>("$toggleBodyClass");
+
+/**
+ * $getPageHtml takes no input and returns the HTML of the current page.
+ */
+export const $getPageHtml = defineBridgeMessage<void, string>("$getPageHtml");
+```
+
+The `defineBridgeMessage` function accepts two type arguments: the input it takes and the output it produces.
+
+> [!NOTE]
+> 
+> Messages need to be defined in a file that will be imported by both main and renderer.
+
+Now, we need to tell the renderer how to handle these messages.
+
+```ts filename="renderer.ts"
+import { $toggleBodyClass, $getPageHtml } from "./message-types";
+import { superbridge } from "superbridge";
+
+superbridge.handle($toggleBodyClass, (className) => {
+  document.body.classList.toggle(className);
+
+  return document.body.classList.contains(className);
+});
+
+superbridge.handle($getPageHtml, () => {
+  return document.body.innerHTML;
+});
+```
+
+Now, on the main side, we can send these messages.
+
+```ts filename="main.ts"
+import { $toggleBodyClass, $getPageHtml } from "./message-types";
+import { superbridge } from "superbridge";
+
+superbridge.send($toggleBodyClass, "dark");
+
+const html = await superbridge.send($getPageHtml);
+console.log(html);
+```
+
+> [!NOTE]
+> 
+> If on the renderer side you only handle messages but never use the client from `superbridge/client`, somewhere early in your renderer code, add:
+> 
+> ```ts
+> import "superbridge/client";
+> ```
+> 
+> This will ensure that `superbridge` is properly initialized and able to connect to the main process.
+>
+> TLDR: `superbridge/client` must be imported at least once in your renderer code, before you send or handle any messages.
+
+## Two-way communication
+
+The pattern above is symmetric. Either side of the bridge can send messages or handle them.
+
+It is possible for both sides to send and handle messages to each other.
+
+As with everything else, those messages can send data of any type supported by the client, including callback functions.

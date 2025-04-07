@@ -1,0 +1,52 @@
+import { Steps } from 'nextra/components'
+
+# Shared values
+
+Sometimes we might want to share some data between the main and renderer processes.
+
+Let's say we have some preferences. We might define them in a file in the *main* process.
+
+```ts filename="preferences.ts"
+import { sharedValue } from "superbridge/main";
+
+export const preferences = sharedValue({
+  theme: "light",
+});
+```
+
+Now, let's expose this value inside the router.
+
+```ts filename="router.ts"
+import { preferences } from "./preferences";
+import { createRouter } from "superbridge/main";
+
+export const appRouter = createRouter({
+  preferences,
+});
+```
+
+Now, this value will be automatically synced between the main and renderer processes.
+
+```ts filename="example.ts"
+const preferences = appClient.preferences();
+console.log(await preferences.get());
+await preferences.update({ theme: "dark" });
+
+const stopWatching = preferences.watch((value) => {
+  console.log("preferences changed", value);
+});
+
+// After some time, we can stop watching
+stopWatching();
+```
+
+On the main side, we can use the same API on the `preferences` object.
+
+```ts filename="main.ts"
+import { preferences } from "./preferences";
+import { watchSystemTheme } from "./utils";
+
+watchSystemTheme((theme) => {
+  preferences.update({ theme }); // Will be updated on the main side and instantly synced to the renderer
+});
+```

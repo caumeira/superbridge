@@ -13,8 +13,7 @@
     "declaration": true,
     "emitDeclarationOnly": true,
     "outDir": "./dist",
-    "jsx": "preserve",
-    "baseUrl": "."
+    "jsx": "preserve"
   },
   "include": ["**/*.ts"],
   "exclude": ["node_modules", "dist", "vite"]

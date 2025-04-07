@@ -43,7 +43,7 @@ function createWindow() {
   });
 
   // Test active push message to Renderer-process.
-  win.webContents.on("did-finish-load", async () => {
+  win.webContents.once("did-finish-load", async () => {
     const body = await bridge.send($getBody, undefined, win?.webContents.id);
     console.log("body", body);
   });

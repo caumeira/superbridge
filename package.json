@@ -6,12 +6,15 @@
   "workspaces": {
     "packages": [
       "superbridge",
-      "testapp"
+      "testapp",
+      "docs"
     ]
   },
   "scripts": {
     "superbridge": "yarn workspace superbridge",
-    "testapp": "yarn workspace testapp"
+    "testapp": "yarn workspace testapp",
+    "docs": "yarn workspace superbridge-docs",
+    "dev": "yarn superbridge dev & yarn testapp dev & yarn docs dev"
   },
   "packageManager": "yarn@4.4.1",
   "devDependencies": {

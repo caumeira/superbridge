@@ -1,0 +1,43 @@
+# Callback functions
+
+All router operations can accept functions as arguments.
+
+Let's say we have some mutation that will report its progress.
+
+```ts filename="router.ts" /onProgress/
+import { createRouter, mutation } from "superbridge/main";
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export const appRouter = createRouter({
+  processFile: mutation(async (filePath: string, onProgress: (progress: number) => void) => {
+    for (let i = 0; i < 10; i++) {
+      const progress = i / 10;
+      onProgress(progress);
+      await wait(1000);
+    }
+
+    return {
+      result: "success",
+    };
+  }),
+});
+```
+
+Now, let's call this mutation from the client.
+
+```ts filename="example.ts"
+const result = await appClient.processFile("path/to/file", (progress) => {
+  console.log(`Progress: ${progress * 100}%`);
+});
+
+console.log(result); // { result: "success" }
+```
+
+> [!NOTE]
+>
+> Callback functions can return values (including another callback function).
+>
+> However, the result is always returned as a promise, even if the callback itself is a synchronous function. Make sure to properly type your callback return value or always await the result.

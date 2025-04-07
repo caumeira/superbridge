@@ -1,16 +1,14 @@
 const MUTATION_SYMBOL = Symbol("mutation");
 
-export interface Mutation<
-  Args extends unknown[] = unknown[],
-  Result = unknown
-> {
-  (...args: Args): Promise<Result>;
+type AnyFunction = (...args: any[]) => any;
+export interface Mutation<F extends AnyFunction> {
+  (...args: Parameters<F>): Promise<ReturnType<F>>;
   [MUTATION_SYMBOL]: "mutation";
 }
 
-export function getIsMutation<Args extends unknown[], Result>(
+export function getIsMutation<F extends AnyFunction>(
   value: unknown
-): value is Mutation<Args, Result> {
+): value is Mutation<F> {
   return (
     typeof value === "function" &&
     MUTATION_SYMBOL in value &&
@@ -18,11 +16,9 @@ export function getIsMutation<Args extends unknown[], Result>(
   );
 }
 
-export function mutation<Args extends unknown[], Result>(
-  handler: (...args: Args) => Result
-): Mutation<Args, Result> {
-  const mutationFunction: Mutation<Args, Result> = async (...args: Args) => {
-    return handler(...args);
+export function mutation<F extends AnyFunction>(handler: F): Mutation<F> {
+  const mutationFunction: Mutation<F> = async (...args: Parameters<F>) => {
+    return handler(...args) as Promise<ReturnType<F>>;
   };
 
   mutationFunction[MUTATION_SYMBOL] = "mutation";

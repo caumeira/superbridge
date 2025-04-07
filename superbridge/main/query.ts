@@ -1,13 +1,14 @@
 const QUERY_SYMBOL = Symbol("query");
 
-export interface Query<Args extends unknown[] = unknown[], Result = unknown> {
-  (...args: Args): Promise<Result>;
+type AnyFunction = (...args: any[]) => any;
+export interface Query<F extends AnyFunction> {
+  (...args: Parameters<F>): Promise<ReturnType<F>>;
   [QUERY_SYMBOL]: "query";
 }
 
-export function getIsQuery<Args extends unknown[], Result>(
+export function getIsQuery<F extends AnyFunction>(
   value: unknown
-): value is Query<Args, Result> {
+): value is Query<F> {
   return (
     typeof value === "function" &&
     QUERY_SYMBOL in value &&
@@ -15,11 +16,9 @@ export function getIsQuery<Args extends unknown[], Result>(
   );
 }
 
-export function query<Args extends unknown[], Result>(
-  handler: (...args: Args) => Result
-): Query<Args, Result> {
-  const queryFunction: Query<Args, Result> = async (...args: Args) => {
-    return handler(...args);
+export function query<F extends AnyFunction>(handler: F): Query<F> {
+  const queryFunction: Query<F> = async (...args: Parameters<F>) => {
+    return handler(...args) as Promise<ReturnType<F>>;
   };
 
   queryFunction[QUERY_SYMBOL] = "query";

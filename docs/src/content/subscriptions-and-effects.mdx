@@ -1,0 +1,139 @@
+import { Steps } from 'nextra/components'
+
+# Subscriptions and Effects
+
+In the previous example, we passed a callback function to the mutation.
+
+Now let's say we want to continuously report some data until the client decides to stop observing.
+
+To do that, we will be using handlers marked as `effect`. Effects are similar to queries and mutations, but they are required to return a cleanup function.
+
+## Example - Watch Displays
+
+Let's say we want to watch displays connected to the machine.
+
+First, let's create a utility function that will be used to watch displays.
+
+```ts filename="watchDisplays.ts"
+import { screen, Display } from "electron";
+
+export function watchDisplays(onDisplaysChange: (displays: Display[]) => void) {
+  function reportDisplays() {
+    const displays = screen.getAllDisplays();
+    onDisplaysChange(displays);
+  }
+
+  reportDisplays();
+
+  screen.on("display-added", reportDisplays);
+  screen.on("display-removed", reportDisplays);
+  screen.on("display-metrics-changed", reportDisplays);
+
+  return () => {
+    screen.off("display-added", reportDisplays);
+    screen.off("display-removed", reportDisplays);
+    screen.off("display-metrics-changed", reportDisplays);
+  };
+}
+```
+
+Now, let's expose this function.
+
+```ts filename="router.ts" 
+import { Display } from "electron";
+import { createRouter, effect } from "superbridge/main";
+
+
+export const appRouter = createRouter({
+  watchDisplays: effect(async (onDisplaysChange: (displays: Display[]) => void) => {
+    return watchDisplays(onDisplaysChange);
+  }),
+});
+```
+
+Now, let's use this effect in the client.
+
+```ts filename="example.ts"
+const stopWatching = appClient.watchDisplays((displays) => {
+  console.log(displays);
+});
+
+// After some time, we can stop watching
+stopWatching();
+```
+
+Let's write an example with React.
+
+```tsx filename="App.tsx"
+import { useEffect, useState } from "react";
+import { type Display } from "electron";
+
+export function App() {
+  const [displays, setDisplays] = useState<Display[]>([]);
+
+  useEffect(() => {
+    return appClient.watchDisplays(setDisplays);
+  }, []);
+
+  return <div>Displays: {displays.length}</div>;
+}
+```
+
+We've just created a subscription that will be automatically cleaned up when the component unmounts.
+
+## Effects
+
+Sometimes we might want to create some effects that do not emit any data.
+
+Let's say we want to expose the ability to hide the Dock icon on macOS.
+
+```ts filename="router.ts"
+import { createRouter, effect } from "superbridge/main";
+import { app } from "electron";
+
+
+export const appRouter = createRouter({
+  hideDockIcon: effect(() => {
+    app.dock.hide();
+
+    return () => {
+      app.dock.show();
+    };
+  }),
+});
+```
+
+Now, let's use this effect in the client.
+
+```ts filename="example.ts"
+const stopHiding = appClient.hideDockIcon();
+
+// After some time, we can stop hiding
+stopHiding();
+```
+
+Let's write an example with React.
+
+```tsx filename="App.tsx"
+import { useEffect, useState } from "react";
+
+export function App() {
+  const [isHiding, setIsHiding] = useState(false);
+
+  function toggleDockIcon() {
+    setIsHiding((prev) => !prev);
+  }
+
+  useEffect(() => {
+    if (!isHiding) return;
+
+    return appClient.hideDockIcon();
+  }, [isHiding]);
+
+  return (
+    <div>
+      <button onClick={toggleDockIcon}>{isHiding ? "Show dock icon" : "Hide dock icon"}</button>
+    </div>
+  );
+}
+```

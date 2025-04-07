@@ -1,8 +1,29 @@
-import { createBridgeHandler, effect, mutation, query } from "superbridge/main";
+import {
+  createRouter,
+  effect,
+  mutation,
+  query,
+  sharedValue,
+} from "superbridge/main";
 
 let foo = "foo";
 
-export const bridgeHandler = createBridgeHandler({
+const settings = sharedValue({
+  theme: "light",
+});
+
+settings.watch((value) => {
+  console.log("settings changed (main)", value);
+  if (value.theme === "dark") {
+    setTimeout(() => {
+      settings.setValue({
+        theme: "light",
+      });
+    }, 1000);
+  }
+});
+
+export const bridgeHandler = createRouter({
   ping: query(async (date: Date, onProgress?: (progress: number) => void) => {
     for (let i = 0; i < 10; i++) {
       onProgress?.(i);
@@ -40,6 +61,10 @@ export const bridgeHandler = createBridgeHandler({
       return foo;
     }),
   },
+  settings,
+  reply: query(async <T>(message: T) => {
+    return message;
+  }),
 });
 
 export type AppBridge = typeof bridgeHandler;
