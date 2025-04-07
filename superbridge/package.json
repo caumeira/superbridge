@@ -1,6 +1,6 @@
 {
   "name": "superbridge",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "A powerful, type-safe, and easy-to-use Electron bridge with support for sending callback functions over the bridge",
   "type": "module",
   "license": "MIT",

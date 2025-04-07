@@ -7,6 +7,8 @@ enum LogLevel {
   Error = 3,
 }
 
+const IS_ENABLED = false;
+
 const LOG_LEVEL = LogLevel.Debug;
 
 interface Logger {
@@ -18,6 +20,8 @@ interface Logger {
 }
 
 function getShouldLog(level: LogLevel) {
+  if (!IS_ENABLED) return false;
+
   return level >= LOG_LEVEL;
 }
 

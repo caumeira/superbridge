@@ -6,6 +6,8 @@ import {
   sharedValue,
 } from "superbridge/main";
 
+import { watchDisplays } from "./watchDisplays";
+
 let foo = "foo";
 
 const settings = sharedValue({
@@ -27,6 +29,7 @@ export const bridgeHandler = createRouter({
   test() {
     return "test";
   },
+  watchDisplays: effect(watchDisplays),
   ping: query(async (date: Date, onProgress?: (progress: number) => void) => {
     for (let i = 0; i < 10; i++) {
       onProgress?.(i);
