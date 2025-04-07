@@ -2,6 +2,8 @@
 
 `superbridge` is a powerful, type-safe, and easy-to-use Electron bridge with support for sending callback functions over the bridge.
 
+Visit [superbridge.dev](https://superbridge.dev) for full documentation.
+
 ```sh npm2yarn
 npm install superbridge
 ```

@@ -22,7 +22,8 @@ export type RouterSingleHandler =
   | Query<AnyFunction>
   | Mutation<AnyFunction>
   | Effect<any[]>
-  | SharedValue<any>;
+  | SharedValue<any>
+  | AnyFunction;
 
 export type RouterInput = BridgeNestedObject<RouterSingleHandler>;
 
@@ -101,7 +102,7 @@ export class Router<T extends RouterInput> {
       return cleanup;
     }
 
-    if (getIsQuery(handler)) {
+    if (getIsQuery(handler) || typeof handler === "function") {
       return handler(...args);
     }
 

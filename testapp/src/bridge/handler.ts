@@ -24,6 +24,9 @@ settings.watch((value) => {
 });
 
 export const bridgeHandler = createRouter({
+  test() {
+    return "test";
+  },
   ping: query(async (date: Date, onProgress?: (progress: number) => void) => {
     for (let i = 0; i < 10; i++) {
       onProgress?.(i);

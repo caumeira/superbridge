@@ -45,6 +45,8 @@ type SuperbridgeClientValue<T> = T extends Query<infer F>
   ? SharedValueClient<T>
   : T extends RouterInput
   ? SuperbridgeClient<T>
+  : T extends AnyFunction
+  ? QueryClient<T>
   : never;
 
 export type SuperbridgeClient<T extends RouterInput> = {

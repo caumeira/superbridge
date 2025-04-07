@@ -45,7 +45,7 @@ import { createRouter, effect } from "superbridge/main";
 
 
 export const appRouter = createRouter({
-  watchDisplays: effect(async (onDisplaysChange: (displays: Display[]) => void) => {
+  watchDisplays: effect((onDisplaysChange: (displays: Display[]) => void) => {
     return watchDisplays(onDisplaysChange);
   }),
 });
