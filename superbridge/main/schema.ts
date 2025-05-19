@@ -4,6 +4,9 @@ import { getIsEffect } from "./effect";
 import { getIsMutation } from "./mutation";
 import { getIsQuery } from "./query";
 import { getIsSharedValue } from "./sharedValue";
+import { createLogger } from "../shared/log";
+
+const log = createLogger("superbridge/main/schema");
 
 export type BridgeFieldSchema =
   | {
@@ -22,7 +25,7 @@ export function getBridgeHandlerSchema(input: RouterInput) {
   const schema: BridgeHandlerSchema = {};
 
   for (const [key, value] of map.entries()) {
-    console.log("key", key, value);
+    log.debug(`Handling router input ${key} to handler ${value}`);
     if (getIsSharedValue(value)) {
       schema[key] = {
         type: "sharedValue",
@@ -59,7 +62,7 @@ export function getBridgeHandlerSchema(input: RouterInput) {
       continue;
     }
 
-    console.warn(`Unknown field type: ${key}`, value);
+    log.warn(`Unknown field type: ${key}`, value);
   }
 
   return schema;
